@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Client Tracker', // Updated App Name
-  description: 'Track clients, projects, and payments.', // Updated Description
+  title: 'متتبع العملاء', // Updated App Name in Arabic
+  description: 'تتبع العملاء والمشاريع والمدفوعات.', // Updated Description in Arabic
 };
 
 export default function RootLayout({
@@ -24,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="ar" dir="rtl"> {/* Set lang to ar and dir to rtl */}
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
         <Toaster /> {/* Add Toaster component here */}
