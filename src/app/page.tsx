@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -234,9 +235,12 @@ const ClientTracker: FC = () => {
     },
   });
 
-  // Watch the paymentStatus field to conditionally show/hide fields
+  // Watch form fields to react to changes
   const paymentStatus = form.watch('paymentStatus');
   const selectedCurrency = form.watch('currency');
+  const totalProjectCost = form.watch('totalProjectCost');
+  const amountPaidSoFar = form.watch('amountPaidSoFar');
+
 
   // Reset conditional fields when paymentStatus changes
   useEffect(() => {
@@ -318,7 +322,8 @@ const ClientTracker: FC = () => {
     setSortConfig({ key, direction });
   };
 
-  const calculateRemainingAmount = (client: Client): number => {
+  const calculateRemainingAmount = (client: Partial<Client>): number => {
+      if (!client.totalProjectCost || client.totalProjectCost <= 0) return 0;
       if (client.paymentStatus === 'paid') return 0;
       const paid = client.amountPaidSoFar ?? 0;
       return Math.max(0, client.totalProjectCost - paid);
@@ -341,10 +346,14 @@ const ClientTracker: FC = () => {
             bValue = b[sortConfig.key as keyof Client];
         }
 
-        if (aValue === undefined || bValue === undefined) {
-            if (aValue === undefined && bValue === undefined) return 0;
-            return aValue === undefined ? 1 : -1; // Sort undefined values to the end
-        }
+        // Handle undefined/null values consistently
+        const aHasValue = aValue !== undefined && aValue !== null;
+        const bHasValue = bValue !== undefined && bValue !== null;
+
+        if (!aHasValue && !bHasValue) return 0;
+        if (!aHasValue) return sortConfig.direction === 'ascending' ? 1 : -1; // Sort undefined/null to the end
+        if (!bHasValue) return sortConfig.direction === 'ascending' ? -1 : 1; // Sort undefined/null to the end
+
 
         let comparison = 0;
         if (typeof aValue === 'number' && typeof bValue === 'number') {
@@ -364,13 +373,19 @@ const ClientTracker: FC = () => {
     <TableHead onClick={() => requestSort(columnKey)} className="cursor-pointer hover:bg-muted/50">
       <div className="flex items-center gap-2">
         {title}
-        <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+        {sortConfig.key === columnKey && (
+          <ArrowUpDown className={`h-4 w-4 text-foreground transform ${sortConfig.direction === 'descending' ? 'rotate-180' : ''}`} />
+        )}
+        {sortConfig.key !== columnKey && (
+            <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+        )}
       </div>
     </TableHead>
   );
 
    // Format currency
-   const formatCurrency = (amount: number, currency: Currency) => {
+   const formatCurrency = (amount: number | null | undefined, currency: Currency) => {
+    if (amount === null || amount === undefined) return '-';
     const options: Intl.NumberFormatOptions = {
         style: 'currency',
         currency: currency,
@@ -474,6 +489,12 @@ const ClientTracker: FC = () => {
         </div>
     );
   }
+
+  const remainingAmountInForm = calculateRemainingAmount({
+    totalProjectCost: totalProjectCost,
+    amountPaidSoFar: amountPaidSoFar,
+    paymentStatus: paymentStatus
+  });
 
   return (
     <div className="container mx-auto p-4 md:p-8">
@@ -630,6 +651,12 @@ const ClientTracker: FC = () => {
                                     }}
                                     />
                                 </FormControl>
+                                 {/* Show remaining amount hint for partially paid */}
+                                 {paymentStatus === 'partially_paid' && amountPaidSoFar !== undefined && amountPaidSoFar !== null && totalProjectCost > 0 && (
+                                     <FormDescription className="text-sm text-muted-foreground pt-1">
+                                         المبلغ المتبقي: {formatCurrency(remainingAmountInForm, selectedCurrency)}
+                                     </FormDescription>
+                                 )}
                                 <FormMessage />
                                 </FormItem>
                             )}
@@ -784,7 +811,7 @@ const ClientTracker: FC = () => {
             </TableBody>
              <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={7} className="font-semibold text-right">الإجمالي (بالدولار الأمريكي)</TableCell>
+                  <TableCell colSpan={7} className="font-semibold text-right">الإجمالي المتبقي (بالدولار الأمريكي)</TableCell>
                   <TableCell className="font-semibold">
                     {rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> :
                      totalRemainingUSD !== null ? formatCurrency(totalRemainingUSD, 'USD') :
@@ -810,3 +837,5 @@ const ClientTracker: FC = () => {
 };
 
 export default ClientTracker;
+
+    
