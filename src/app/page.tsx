@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react'; // Ensure React is imported
@@ -118,22 +119,25 @@ const debtSchema = z.object({
   paidDate: z.date().optional(),
   notes: z.string().optional(),
 }).refine(data => {
-  // Require paidDate if status is paid or partially_paid
-  if ((data.status === 'paid' || data.status === 'partially_paid') && !data.paidDate) {
+  // Require paidDate if status is partially_paid and amountRepaid is positive
+  // Or if status is paid
+  if ( (data.status === 'partially_paid' && (data.amountRepaid ?? 0) > 0 && !data.paidDate) || (data.status === 'paid' && !data.paidDate) ) {
     return false;
   }
   return true;
 }, {
-  message: 'تاريخ السداد مطلوب عندما تكون الحالة "تم السداد" أو "سداد جزئي".',
+  message: 'تاريخ السداد مطلوب عندما تكون الحالة "تم السداد" أو "سداد جزئي" مع وجود مبلغ مسدد.',
   path: ['paidDate'],
 }).refine(data => {
-  // Require amountRepaid if status is paid or partially_paid
-  if ((data.status === 'paid' || data.status === 'partially_paid') && (data.amountRepaid === undefined || data.amountRepaid === null)) {
-    return false;
+  // Require amountRepaid if status is paid or (partially_paid with amountRepaid > 0 implicitly needed)
+  if ( (data.status === 'paid') && (data.amountRepaid === undefined || data.amountRepaid === null) ) {
+     // For 'paid', amountRepaid *must* be present and equal to amount (checked below)
+     return false;
   }
+  // For 'partially_paid', amountRepaid is optional but must be non-negative if present
   return true;
 }, {
-  message: 'المبلغ المسدد مطلوب عندما تكون الحالة "تم السداد" أو "سداد جزئي".',
+  message: 'المبلغ المسدد مطلوب عندما تكون الحالة "تم السداد".',
   path: ['amountRepaid'],
 }).refine(data => {
   // amountRepaid should not exceed amount
@@ -153,6 +157,15 @@ const debtSchema = z.object({
 }, {
   message: 'في حالة "تم السداد"، يجب أن يساوي المبلغ المسدد مبلغ الدين الإجمالي.',
   path: ['amountRepaid'],
+}).refine(data => {
+    // If outstanding, amountRepaid should be 0 or undefined/null
+    if (data.status === 'outstanding' && (data.amountRepaid ?? 0) !== 0) {
+        return false;
+    }
+    return true;
+}, {
+    message: 'في حالة "مستحق"، يجب أن يكون المبلغ المسدد صفر.',
+    path: ['amountRepaid'],
 });
 type Debt = z.infer<typeof debtSchema>;
 
@@ -162,6 +175,13 @@ const paymentFormSchema = z.object({
   paymentDate: z.date({ required_error: 'تاريخ الدفعة مطلوب.' }),
 });
 type PaymentFormData = z.infer<typeof paymentFormSchema>;
+
+// Schema for editing debt repayment
+const repaymentFormSchema = z.object({
+    amountRepaid: z.coerce.number().nonnegative({ message: 'المبلغ المسدد يجب أن يكون صفر أو أكثر.' }),
+    paidDate: z.date({ required_error: 'تاريخ آخر سداد مطلوب.' }),
+});
+type RepaymentFormData = z.infer<typeof repaymentFormSchema>;
 
 
 // Local storage keys
@@ -288,6 +308,11 @@ const ClientTracker: FC = () => {
   const [rateLoading, setRateLoading] = useState(true);
   const [rateError, setRateError] = useState<string | null>(null);
 
+  // State for managing which client's payment form is open
+  const [addingPaymentForClientId, setAddingPaymentForClientId] = useState<string | null>(null);
+  // State for managing which debt's repayment form is open
+  const [editingRepaymentForDebtId, setEditingRepaymentForDebtId] = useState<string | null>(null);
+
   // Keep toast ref updated
   useEffect(() => {
     toastRef.current = toast;
@@ -407,7 +432,7 @@ const ClientTracker: FC = () => {
             const parsedDebts = JSON.parse(storedDebts).map((debt: any) => ({
                 ...debt,
                 amount: typeof debt.amount === 'number' ? debt.amount : 0,
-                amountRepaid: typeof debt.amountRepaid === 'number' ? debt.amountRepaid : undefined,
+                amountRepaid: typeof debt.amountRepaid === 'number' ? debt.amountRepaid : 0, // Default to 0 if missing/invalid
                 dueDate: debt.dueDate ? new Date(debt.dueDate) : new Date(), // Ensure valid date
                 paidDate: debt.paidDate ? new Date(debt.paidDate) : undefined,
                 currency: debt.currency || 'EGP',
@@ -493,10 +518,16 @@ const ClientTracker: FC = () => {
           currency: 'EGP',
           dueDate: new Date(),
           status: 'outstanding',
-          amountRepaid: undefined,
+          amountRepaid: 0, // Initialize with 0
           paidDate: undefined,
           notes: '',
       },
+  });
+
+   // Repayment Form (for editing existing debt repayment)
+  const repaymentForm = useForm<RepaymentFormData>({
+      resolver: zodResolver(repaymentFormSchema),
+      // Default values will be set when the form is opened
   });
 
   // Watch debt form fields
@@ -505,20 +536,26 @@ const ClientTracker: FC = () => {
   const debtAmountRepaid = debtForm.watch('amountRepaid');
   const debtSelectedCurrency = debtForm.watch('currency');
 
-  // State for managing which client's payment form is open
-  const [addingPaymentForClientId, setAddingPaymentForClientId] = useState<string | null>(null);
 
-
-  // Reset conditional debt fields when status changes
+  // Reset conditional debt fields when status changes in the main debt form
   useEffect(() => {
       if (debtStatus === 'outstanding') {
-          debtForm.setValue('amountRepaid', undefined);
+          debtForm.setValue('amountRepaid', 0); // Reset to 0 for outstanding
           debtForm.setValue('paidDate', undefined);
           debtForm.clearErrors(['amountRepaid', 'paidDate']);
       } else if (debtStatus === 'paid') {
           const totalAmount = debtForm.getValues('amount');
           if (totalAmount > 0) {
               debtForm.setValue('amountRepaid', totalAmount);
+          }
+          // Automatically set paidDate if not already set
+          if (!debtForm.getValues('paidDate')) {
+              debtForm.setValue('paidDate', new Date());
+          }
+      } else if (debtStatus === 'partially_paid') {
+          // Automatically set paidDate if not already set and amountRepaid is positive
+          if (!debtForm.getValues('paidDate') && (debtForm.getValues('amountRepaid') ?? 0) > 0) {
+              debtForm.setValue('paidDate', new Date());
           }
       }
   }, [debtStatus, debtForm]);
@@ -577,12 +614,29 @@ const ClientTracker: FC = () => {
    function onDebtSubmit(values: Debt) {
        let finalValues = { ...values };
 
-       if (finalValues.status === 'outstanding') {
-           finalValues.amountRepaid = 0;
-           finalValues.paidDate = undefined;
-       } else if (finalValues.status === 'paid') {
-           finalValues.amountRepaid = finalValues.amount;
-       }
+        // Ensure amountRepaid is 0 if status is outstanding
+        if (finalValues.status === 'outstanding') {
+            finalValues.amountRepaid = 0;
+            finalValues.paidDate = undefined;
+        } else if (finalValues.status === 'paid') {
+            finalValues.amountRepaid = finalValues.amount; // Ensure repaid is full amount
+             // Ensure paidDate is set, defaulting to now if not provided
+            if (!finalValues.paidDate) {
+                finalValues.paidDate = new Date();
+            }
+        } else { // partially_paid
+             // Ensure amountRepaid is a number (default to 0 if undefined/null)
+            finalValues.amountRepaid = finalValues.amountRepaid ?? 0;
+            // Ensure paidDate is set if amountRepaid > 0, defaulting to now if not provided
+            if (finalValues.amountRepaid > 0 && !finalValues.paidDate) {
+                finalValues.paidDate = new Date();
+            }
+             // If amountRepaid is 0, clear paidDate
+            if (finalValues.amountRepaid <= 0) {
+                 finalValues.paidDate = undefined;
+             }
+        }
+
 
        const newDebt = { ...finalValues, id: crypto.randomUUID() };
 
@@ -591,8 +645,89 @@ const ClientTracker: FC = () => {
            title: 'تمت إضافة الدين',
            description: `تمت إضافة الدين على ${values.debtorName} بنجاح.`,
        });
-       debtForm.reset(); // Reset form fields
+       debtForm.reset({ // Reset with default values, including amountRepaid: 0
+            description: '',
+            debtorName: '',
+            creditorName: '',
+            amount: 0,
+            currency: 'EGP',
+            dueDate: new Date(),
+            status: 'outstanding',
+            amountRepaid: 0,
+            paidDate: undefined,
+            notes: '',
+       });
    }
+
+    // Repayment Submit Handler (Updates an existing debt's repayment info)
+    function onRepaymentSubmit(debtId: string) {
+        return (values: RepaymentFormData) => {
+            const debtIndex = debts.findIndex(d => d.id === debtId);
+            if (debtIndex === -1) return;
+
+            const originalDebt = debts[debtIndex];
+
+            // Ensure repaid amount doesn't exceed total amount
+            if (values.amountRepaid > originalDebt.amount) {
+                repaymentForm.setError('amountRepaid', {
+                    type: 'manual',
+                    message: `المبلغ المسدد (${formatCurrency(values.amountRepaid, originalDebt.currency)}) لا يمكن أن يتجاوز مبلغ الدين الإجمالي (${formatCurrency(originalDebt.amount, originalDebt.currency)}).`,
+                });
+                return; // Stop submission
+            }
+
+             // Determine the new status based on the repaid amount
+             let newStatus: DebtStatus = 'partially_paid';
+             if (values.amountRepaid <= 0) {
+                 newStatus = 'outstanding';
+             } else if (values.amountRepaid >= originalDebt.amount) {
+                 newStatus = 'paid';
+                 values.amountRepaid = originalDebt.amount; // Ensure it's exactly the total amount if paid
+             }
+
+
+            const updatedDebt: Debt = {
+                ...originalDebt,
+                amountRepaid: values.amountRepaid,
+                paidDate: values.paidDate, // Date of this specific repayment/update
+                status: newStatus,
+            };
+
+            // Validate the final updated debt object
+            const validationResult = debtSchema.safeParse(updatedDebt);
+
+             if (!validationResult.success) {
+                 console.error("Debt validation failed after repayment update:", validationResult.error);
+                 toastRef.current({
+                     title: 'خطأ في تحديث السداد',
+                     description: `فشل تحديث السداد. ${validationResult.error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
+                     variant: 'destructive',
+                 });
+                 // Optionally show errors in the repayment form
+                 validationResult.error.errors.forEach(err => {
+                     if (err.path[0] === 'amountRepaid' || err.path[0] === 'paidDate') {
+                        repaymentForm.setError(err.path[0] as keyof RepaymentFormData, { type: 'manual', message: err.message });
+                     }
+                 });
+                 return;
+            }
+
+            // Update the debts array
+            setDebts(prevDebts => {
+                const newDebts = [...prevDebts];
+                newDebts[debtIndex] = validationResult.data; // Use validated data
+                return newDebts;
+            });
+
+            toastRef.current({
+                title: 'تم تحديث السداد',
+                description: `تم تحديث المبلغ المسدد للدين على ${originalDebt.debtorName}. الحالة الآن ${DEBT_STATUSES[newStatus]}.`,
+            });
+
+            repaymentForm.reset(); // Reset repayment form
+            setEditingRepaymentForDebtId(null); // Close the form
+        };
+    }
 
 
   const deleteClient = (idToDelete: string) => {
@@ -629,76 +764,80 @@ const ClientTracker: FC = () => {
            description: `تمت إزالة سجل الدين.`,
            variant: 'destructive',
        });
+        // Close edit form if the deleted debt was being edited
+        if (editingRepaymentForDebtId === idToDelete) {
+            setEditingRepaymentForDebtId(null);
+        }
    };
 
 
-   // Function to handle status updates triggered from the Select dropdown
-   const handleClientStatusChange = (clientId: string, newStatus: PaymentStatus) => {
+   // Function to handle status updates triggered from the Select dropdown in Client Table
+   const handleClientStatusChange = (clientId: string, newStatusTarget: PaymentStatus) => {
         const client = clients.find(c => c.id === clientId);
         if (!client) return;
 
         const totalPaid = calculateTotalPaid(clientId, payments);
         const currentStatus = determinePaymentStatus(totalPaid, client.totalProjectCost);
 
-        if (newStatus === currentStatus) return; // No change needed
+        if (newStatusTarget === currentStatus) return; // No change needed
 
-        // Logic based on the *target* status
-        if (newStatus === 'paid') {
-            // If trying to mark as paid but not fully paid, show error/warning
+        // --- Logic based on the *target* status ---
+
+        if (newStatusTarget === 'paid') {
+            // If trying to mark as paid but not fully paid
             if (totalPaid < client.totalProjectCost) {
                 toastRef.current({
                     title: 'لا يمكن التحديث إلى "تم الدفع"',
                     description: `العميل ${client.name} لم يسدد التكلفة الإجمالية بعد. المبلغ المتبقي ${formatCurrency(client.totalProjectCost - totalPaid, client.currency)}. قم بإضافة دفعة لتغطية المبلغ المتبقي.`,
                     variant: 'destructive',
                 });
-                // Revert the select dropdown visually (optional, depends on UX preference)
-                // This requires managing the Select's value externally or forcing a re-render.
+                // Revert visual state (needed if Select is uncontrolled within the table row)
+                // Force a re-render might be the simplest way if not managing select state externally
+                setClients([...clients]); // Trigger re-render
                 return;
             }
-            // If already fully paid, the status is already 'paid'.
-            // If they paid *exactly* the amount, status is already 'paid'.
+             // If already fully paid, just confirm
             toastRef.current({
                  title: 'تم التأكيد',
-                 description: `حالة ${client.name} هي "تم الدفع".`,
+                 description: `حالة ${client.name} هي بالفعل "تم الدفع".`,
              });
+             // No actual state change, but might need visual confirmation if select was optimistic
+             setClients([...clients]); // Trigger re-render if needed
 
-        } else if (newStatus === 'partially_paid') {
-            // If switching TO partially_paid
+        } else if (newStatusTarget === 'partially_paid') {
+            // If trying to mark as partially_paid but no payments exist
             if (totalPaid <= 0) {
                  toastRef.current({
                     title: 'لا يمكن التحديث إلى "دفع جزئي"',
                     description: `العميل ${client.name} لم يقم بأي دفعات. قم بإضافة دفعة أولاً.`,
                     variant: 'destructive',
                  });
+                setClients([...clients]); // Revert visual state
                 return;
             }
+            // If trying to mark as partially_paid but already fully paid
             if (totalPaid >= client.totalProjectCost) {
                  toastRef.current({
                      title: 'تنبيه',
                      description: `العميل ${client.name} قام بالفعل بدفع التكلفة كاملة أو أكثر. الحالة هي "تم الدفع".`,
                      variant: 'default',
                  });
-                 // Optionally revert visual state if needed
+                 setClients([...clients]); // Revert visual state
                  return;
             }
-            // If currently 'not_paid' and becoming 'partially_paid'
-            if (currentStatus === 'not_paid') {
-                // This case shouldn't happen if totalPaid > 0, but as a safeguard:
-                toastRef.current({
-                    title: 'تحديث الحالة',
-                    description: `تم تغيير حالة ${client.name} إلى "دفع جزئي". يرجى إضافة دفعة لتسجيل المبلغ المدفوع.`,
-                });
-                // Maybe open the payment form?
-                setAddingPaymentForClientId(clientId);
-            } else {
-                 toastRef.current({
-                    title: 'تم التأكيد',
-                    description: `حالة ${client.name} هي "دفع جزئي".`,
-                });
-            }
+             // If conditions met (paid > 0 and paid < totalCost)
+            toastRef.current({
+                title: 'تم التأكيد',
+                description: `حالة ${client.name} هي "دفع جزئي".`,
+            });
+             // Open payment form if transitioning from 'not_paid'
+             if (currentStatus === 'not_paid') {
+                 setAddingPaymentForClientId(clientId);
+             }
+             // No actual data change needed, status is derived. Re-render ensures consistency.
+             setClients([...clients]);
 
-
-        } else if (newStatus === 'not_paid') {
+        } else if (newStatusTarget === 'not_paid') {
             // If trying to mark as 'not_paid' but payments exist
             if (totalPaid > 0) {
                 toastRef.current({
@@ -706,87 +845,116 @@ const ClientTracker: FC = () => {
                     description: `توجد دفعات مسجلة للعميل ${client.name}. لحذف الدفعات وتغيير الحالة، قم بحذف سجلات الدفعات الفردية أولاً.`,
                     variant: 'destructive',
                 });
-                 // Optionally revert visual state
+                 setClients([...clients]); // Revert visual state
                 return;
             }
-            // If no payments exist, status is already 'not_paid'.
+            // If no payments exist, confirm status
              toastRef.current({
                  title: 'تم التأكيد',
                  description: `حالة ${client.name} هي "لم يتم الدفع".`,
              });
+             // No data change needed. Re-render ensures consistency.
+             setClients([...clients]);
         }
    };
 
 
-
+  // Function to handle status updates triggered from the Select dropdown in Debt Table
   const updateDebtStatus = (debtId: string, newStatus: DebtStatus) => {
-      setDebts(prevDebts =>
-          prevDebts.map(debt => {
-              if (debt.id === debtId) {
-                  let updatedDebt = { ...debt, status: newStatus };
+      const debtIndex = debts.findIndex(d => d.id === debtId);
+      if (debtIndex === -1) return;
 
-                  if (newStatus === 'outstanding') {
-                      updatedDebt.amountRepaid = 0; // Reset amount repaid
-                      updatedDebt.paidDate = undefined; // Clear paid date
-                  } else if (newStatus === 'paid') {
-                      updatedDebt.amountRepaid = debt.amount; // Set repaid to full amount
-                      if (!updatedDebt.paidDate) { // Set paid date if not already set
-                          updatedDebt.paidDate = new Date();
-                          // Use toast ref inside effect/callback
-                          toastRef.current({
-                              title: 'تنبيه',
-                              description: `تم تحديث حالة الدين على "${debt.debtorName}" إلى "تم السداد". تم تعيين تاريخ السداد إلى اليوم.`,
-                              variant: 'default',
-                          });
-                      }
-                  } else { // partially_paid
-                      // If switching to partially paid, prompt for update but don't clear amountRepaid
-                      if (updatedDebt.amountRepaid === undefined || updatedDebt.amountRepaid === null || (debt.status === 'outstanding' && updatedDebt.amountRepaid === 0)) {
-                          // If amountRepaid is not set or was 0 coming from outstanding, prompt to add it.
-                           updatedDebt.amountRepaid = undefined; // Keep it undefined until user sets it
-                           // Use toast ref inside effect/callback
-                           toastRef.current({
-                              title: 'تنبيه',
-                              description: `تم تحديث حالة الدين على "${debt.debtorName}" إلى "سداد جزئي". يرجى تحديث المبلغ المسدد وتاريخ السداد.`,
-                              variant: 'default',
-                          });
-                      }
-                      // Set paidDate if not already set (date of the partial payment)
-                      if (!updatedDebt.paidDate) {
-                          updatedDebt.paidDate = new Date();
-                           // Use toast ref inside effect/callback
-                           toastRef.current({
-                              title: 'تنبيه',
-                              description: `تم تعيين تاريخ السداد للدين على "${debt.debtorName}" إلى اليوم تلقائيًا لحالة "سداد جزئي". يمكنك تعديله.`,
-                              variant: 'default',
-                          });
-                      }
-                  }
+      const originalDebt = debts[debtIndex];
 
-                  // Validate the updated debt data before saving
-                  try {
-                      debtSchema.parse(updatedDebt);
-                      // Use toast ref inside effect/callback
-                      toastRef.current({
-                          title: 'تم تحديث الحالة',
-                          description: `تم تغيير حالة الدين على "${debt.debtorName}" إلى "${DEBT_STATUSES[newStatus]}".`,
-                      });
-                      return updatedDebt; // Return the valid, updated debt object
-                  } catch (error: any) {
-                       console.error("Validation failed after debt status update:", error);
-                       // Use toast ref inside effect/callback
-                       toastRef.current({
-                           title: 'خطأ في التحديث',
-                           description: `فشل تحديث حالة الدين. ${error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
-                           variant: 'destructive',
-                       });
-                      return debt; // Return original debt if validation fails
-                  }
-              }
-              return debt; // Return unchanged debt for other IDs
-          })
-      );
+      // If status is already the same, do nothing
+      if (originalDebt.status === newStatus) return;
+
+      let updatedDebt = { ...originalDebt, status: newStatus };
+      let showRepaymentForm = false;
+      let needsRepaymentUpdate = false;
+      let toastMessage = '';
+
+      if (newStatus === 'outstanding') {
+          updatedDebt.amountRepaid = 0;
+          updatedDebt.paidDate = undefined;
+          toastMessage = `تم تحديث حالة الدين على "${originalDebt.debtorName}" إلى "مستحق". تم تصفير المبلغ المسدد.`;
+          // Close repayment form if open for this debt
+          if (editingRepaymentForDebtId === debtId) {
+               setEditingRepaymentForDebtId(null);
+          }
+      } else if (newStatus === 'paid') {
+          updatedDebt.amountRepaid = originalDebt.amount;
+          // Set paid date to now only if it wasn't already set or if coming from outstanding/partially_paid
+          if (!updatedDebt.paidDate || originalDebt.status !== 'paid') {
+              updatedDebt.paidDate = new Date();
+          }
+          toastMessage = `تم تحديث حالة الدين على "${originalDebt.debtorName}" إلى "تم السداد".`;
+           // Close repayment form if open
+           if (editingRepaymentForDebtId === debtId) {
+              setEditingRepaymentForDebtId(null);
+           }
+      } else { // partially_paid
+          // If coming from 'paid', reset amountRepaid to previous value or prompt
+          if (originalDebt.status === 'paid') {
+              // Revert amountRepaid to something less than total? Or prompt?
+              // For simplicity, let's keep the full amount but prompt user to adjust.
+              // updatedDebt.amountRepaid = originalDebt.amountRepaid ?? 0; // Keep previous repaid amount if available?
+               toastMessage = `تم تحديث حالة الدين على "${originalDebt.debtorName}" إلى "سداد جزئي". يرجى تعديل المبلغ المسدد.`;
+               needsRepaymentUpdate = true; // Prompt user to update
+               showRepaymentForm = true; // Open form to force update
+          } else { // Coming from 'outstanding'
+               // amountRepaid should ideally be updated via the form
+               updatedDebt.amountRepaid = originalDebt.amountRepaid ?? 0; // Keep current (likely 0)
+               toastMessage = `تم تحديث حالة الدين على "${originalDebt.debtorName}" إلى "سداد جزئي". قم بتحديث المبلغ المسدد.`;
+               needsRepaymentUpdate = true;
+               showRepaymentForm = true; // Open form to input amount
+          }
+           // Set paid date to now if amountRepaid > 0 and no date exists, or if coming from outstanding
+          if (updatedDebt.amountRepaid > 0 && (!updatedDebt.paidDate || originalDebt.status === 'outstanding')) {
+              updatedDebt.paidDate = new Date();
+          } else if (updatedDebt.amountRepaid <= 0) {
+              updatedDebt.paidDate = undefined; // Clear date if no repayment
+          }
+      }
+
+      // Validate before updating state
+      const validationResult = debtSchema.safeParse(updatedDebt);
+      if (!validationResult.success) {
+           console.error("Validation failed during debt status update:", validationResult.error);
+           toastRef.current({
+               title: 'خطأ في تحديث الحالة',
+               description: `فشل تحديث حالة الدين. ${validationResult.error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
+               variant: 'destructive',
+           });
+           // Revert visual state in Select (important if uncontrolled)
+           setDebts([...debts]); // Trigger re-render
+           return; // Stop the update
+      }
+
+      // Update state with validated data
+       setDebts(prevDebts => {
+           const newDebts = [...prevDebts];
+           newDebts[debtIndex] = validationResult.data;
+           return newDebts;
+       });
+
+       // Show confirmation toast
+       toastRef.current({
+           title: 'تم تحديث الحالة',
+           description: toastMessage,
+       });
+
+        // Open the repayment form if needed
+        if (showRepaymentForm) {
+            // Pre-fill form with current values
+             repaymentForm.reset({
+                amountRepaid: updatedDebt.amountRepaid,
+                paidDate: updatedDebt.paidDate || new Date(), // Default to now if no date
+            });
+            setEditingRepaymentForDebtId(debtId);
+        }
   };
+
 
    // Convert any currency to USD
    const convertToUSD = useCallback((amount: number, fromCurrency: Currency): number | null => {
@@ -990,7 +1158,7 @@ const ClientTracker: FC = () => {
 
  // ----- CHART DATA -----
 
- // Process data for the chart (sum of payments per day in USD for the current month)
+ // Process data for the chart (individual payments in USD over time)
  const chartData: ChartData[] | null = useMemo(() => {
    if (!isMounted || rateLoading || !exchangeRates) return null; // Return null if rates not ready
 
@@ -998,8 +1166,8 @@ const ClientTracker: FC = () => {
    const startOfMonth = dateFnsStartOfMonth(now);
    const endOfMonth = dateFnsEndOfMonth(now);
 
-   // Filter payments within the current month
-   const paymentsInMonth = payments
+   // Filter payments within the current month and convert to USD
+   const paymentsInMonthUSD = payments
      .filter(
        (payment) =>
          payment.paymentDate &&
@@ -1008,43 +1176,30 @@ const ClientTracker: FC = () => {
          payment.paymentDate <= endOfMonth
      )
      .map(payment => ({
-       date: payment.paymentDate!,
+       date: payment.paymentDate!, // Keep the original date object
        amountUSD: convertToUSD(payment.amount, payment.currency) ?? 0,
+       clientName: clients.find(c => c.id === payment.clientId)?.name || 'عميل غير معروف',
+       originalAmount: payment.amount,
+       originalCurrency: payment.currency,
      }))
+     .filter(p => p.amountUSD > 0) // Only include payments with a positive USD amount
      .sort((a, b) => a.date.getTime() - b.date.getTime()); // Sort payments by date
 
-   // Group payments by day and sum the amounts in USD
-   const dailyTotals: { [key: string]: { date: Date; total: number } } = {};
-   let currentDate = startOfMonth;
+   // Map to the structure required by the chart, adding a formatted date string
+    const chartEntries = paymentsInMonthUSD.map((payment, index) => ({
+        // Use a unique identifier including index in case of same-day payments
+        id: `${format(payment.date, 'yyyy-MM-dd')}-${index}`,
+        date: payment.date, // Keep the Date object for potential future use
+        dateFormatted: format(payment.date, 'd MMM', { locale: arSA }), // Arabic date format for X-axis label
+        amountUSD: payment.amountUSD,
+        clientName: payment.clientName,
+        originalAmount: payment.originalAmount,
+        originalCurrency: payment.originalCurrency,
+    }));
 
-   // Pre-fill all days of the month with zero total
-   while (currentDate <= endOfMonth) {
-     const dateStr = format(currentDate, 'yyyy-MM-dd');
-     dailyTotals[dateStr] = { date: new Date(currentDate), total: 0 };
-     currentDate = addDays(currentDate, 1);
-   }
+    return chartEntries.length > 0 ? chartEntries : []; // Return empty array if no payments
 
-   // Aggregate payments per day
-   paymentsInMonth.forEach(payment => {
-     const dateStr = format(payment.date, 'yyyy-MM-dd');
-     if (dailyTotals[dateStr]) {
-        dailyTotals[dateStr].total += payment.amountUSD;
-     }
-   });
-
-   // Convert to chart data format
-   const chartEntries = Object.values(dailyTotals)
-     .map(data => ({
-       date: format(data.date, 'd MMM', { locale: arSA }), // Arabic date format for X-axis label
-       total: data.total, // Sum of payments in USD for that day
-     }));
-
-    // Filter out days with zero income if desired, or keep them
-    // Return only if there's actual income data to show
-    const hasIncome = chartEntries.some(d => d.total > 0);
-    return hasIncome ? chartEntries : []; // Return empty array if no income, or chartEntries to show full month with zeros
-
- }, [payments, isMounted, exchangeRates, rateLoading, convertToUSD]);
+ }, [payments, clients, isMounted, exchangeRates, rateLoading, convertToUSD]);
 
 
 
@@ -1309,7 +1464,7 @@ const ClientTracker: FC = () => {
                               )}
                           />
 
-                         {/* Conditional Fields for Debt */}
+                         {/* Conditional Fields for Debt Repayment in Main Form */}
                          {(debtStatus === 'paid' || debtStatus === 'partially_paid') && (
                               <>
                                  <FormField
@@ -1323,17 +1478,19 @@ const ClientTracker: FC = () => {
                                           </FormLabel>
                                           <FormControl>
                                               <Input
-                                              type="number"
-                                              placeholder="أدخل المبلغ المسدد"
-                                              {...field}
-                                              step="0.01"
-                                              className="bg-background"
-                                              value={field.value ?? ''}
-                                              onChange={(e) => {
-                                                  const value = e.target.value === '' ? undefined : parseFloat(e.target.value);
-                                                  field.onChange(value);
-                                              }}
-                                              />
+                                                  type="number"
+                                                  placeholder="أدخل المبلغ المسدد"
+                                                  {...field}
+                                                  step="0.01"
+                                                  className="bg-background"
+                                                  value={field.value ?? ''} // Handle undefined/null for input value
+                                                  onChange={(e) => {
+                                                      // Convert empty string or invalid number to undefined, otherwise parse float
+                                                      const value = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                                                      field.onChange(isNaN(value as number) ? undefined : value); // Pass undefined if NaN
+                                                  }}
+                                                  disabled={debtStatus === 'paid'} // Disable if fully paid in main form
+                                               />
                                           </FormControl>
                                            {debtStatus === 'partially_paid' && debtAmountRepaid !== undefined && debtAmountRepaid !== null && debtAmount > 0 && (
                                                <FormDescription className="text-sm text-yellow-600 dark:text-yellow-400 pt-1 font-medium">
@@ -1404,34 +1561,37 @@ const ClientTracker: FC = () => {
       </Card>
 
 
-       {/* Payment Chart Card (Daily Income USD for current month) */}
-       {chartData && chartData.length > 0 && (
-         <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
+       {/* Payment Chart Card (Individual Payments USD for current month) */}
+        <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
            <CardHeader className="bg-muted/50">
-             <CardTitle className="text-xl text-foreground">الدخل اليومي الشهري (بالدولار الأمريكي - تقديري)</CardTitle>
+             <CardTitle className="text-xl text-foreground">الدفعات الفردية الشهرية (بالدولار الأمريكي - تقديري)</CardTitle>
              <AlertDescription className="text-muted-foreground mt-2">
-                ملاحظة: يمثل الرسم البياني مجموع الدفعات المقدر بالدولار الأمريكي لكل يوم في هذا الشهر، بناءً على سجلات الدفع الفردية.
+                ملاحظة: يمثل الرسم البياني كل دفعة فردية مقدرة بالدولار الأمريكي لهذا الشهر. مرر فوق النقاط لرؤية التفاصيل.
              </AlertDescription>
            </CardHeader>
-           <CardContent className="p-4 md:p-6"> {/* Adjusted padding for chart */}
-             <ClientPaymentChart data={chartData} />
+           <CardContent className="p-4 md:p-6">
+             {chartData && chartData.length > 0 ? (
+               <ClientPaymentChart data={chartData} />
+             ) : rateLoading ? (
+                 <div className="flex items-center justify-center h-[300px]">
+                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                   <p className="ml-2 text-muted-foreground">جاري تحميل بيانات الرسم البياني...</p>
+                 </div>
+              ) : rateError ? (
+                 <Alert variant="destructive" className="h-[300px] flex flex-col items-center justify-center">
+                   <AlertCircle className="h-6 w-6 mb-2"/>
+                   <AlertTitle>لا يمكن عرض الرسم البياني</AlertTitle>
+                   <AlertDescription>تعذر تحميل الرسم البياني للدخل بسبب خطأ في جلب سعر الصرف.</AlertDescription>
+                 </Alert>
+              ) : (
+                 <Alert className="h-[300px] flex flex-col items-center justify-center shadow border border-yellow-200 bg-yellow-50 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-300">
+                   <AlertCircle className="h-6 w-6 mb-2" />
+                   <AlertTitle>لا توجد بيانات لعرضها</AlertTitle>
+                   <AlertDescription>لا توجد دفعات مسجلة لهذا الشهر لعرضها في الرسم البياني.</AlertDescription>
+                 </Alert>
+             )}
            </CardContent>
          </Card>
-       )}
-       {chartData === null && !rateLoading && rateError && (
-          <Alert variant="destructive" className="mb-8 shadow">
-              <AlertCircle className="h-4 w-4 mr-2"/>
-            <AlertTitle>لا يمكن عرض الرسم البياني</AlertTitle>
-            <AlertDescription>تعذر تحميل الرسم البياني للدخل بسبب خطأ في جلب سعر الصرف.</AlertDescription>
-          </Alert>
-       )}
-       {(chartData === null || chartData.length === 0) && !rateLoading && !rateError && ( // Check for null or empty array
-           <Alert className="mb-8 shadow border border-yellow-200 bg-yellow-50 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-300">
-               <AlertCircle className="h-4 w-4 mr-2" />
-               <AlertTitle>لا توجد بيانات لعرضها</AlertTitle>
-               <AlertDescription>لا توجد دفعات مسجلة لهذا الشهر لعرضها في الرسم البياني.</AlertDescription>
-           </Alert>
-       )}
 
 
       {/* Client Records Card */}
@@ -1443,7 +1603,7 @@ const ClientTracker: FC = () => {
           <Table>
             <TableCaption className="mt-4 mb-2 text-muted-foreground">قائمة بعملائك ومشاريعهم وحالات الدفع.</TableCaption>
             <TableHeader>
-              <TableRow className="border-b border-border">
+              <TableRow>
                 <SortableClientHeader columnKey="name" title="اسم العميل" />
                 <SortableClientHeader columnKey="project" title="المشروع" />
                 <SortableClientHeader columnKey="totalProjectCost" title="التكلفة الإجمالية" />
@@ -1504,7 +1664,14 @@ const ClientTracker: FC = () => {
                              <Button
                                variant="outline"
                                size="sm"
-                               onClick={() => setAddingPaymentForClientId(client.id === addingPaymentForClientId ? null : client.id)}
+                               onClick={() => {
+                                  const newClientId = client.id === addingPaymentForClientId ? null : client.id;
+                                  setAddingPaymentForClientId(newClientId);
+                                  // Reset form when opening for a new client
+                                  if (newClientId) {
+                                      paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() });
+                                  }
+                               }}
                                className="text-xs"
                              >
                                {addingPaymentForClientId === client.id ? 'إلغاء' : 'إضافة دفعة'}
@@ -1655,7 +1822,7 @@ const ClientTracker: FC = () => {
               <Table>
                   <TableCaption className="mt-4 mb-2 text-muted-foreground">قائمة بالديون المستحقة والمدفوعة.</TableCaption>
                   <TableHeader>
-                      <TableRow className="border-b border-border">
+                      <TableRow>
                           <SortableDebtHeader columnKey="description" title="وصف الدين" />
                           <SortableDebtHeader columnKey="debtorName" title="المدين" />
                           <SortableDebtHeader columnKey="creditorName" title="الدائن" />
@@ -1666,7 +1833,7 @@ const ClientTracker: FC = () => {
                           <SortableDebtHeader columnKey="remainingDebt" title="المتبقي" />
                           <TableHead>المتبقي (دولار)</TableHead>
                           <SortableDebtHeader columnKey="dueDate" title="تاريخ الاستحقاق" />
-                          <SortableDebtHeader columnKey="paidDate" title="تاريخ السداد" />
+                          <SortableDebtHeader columnKey="paidDate" title="آخر سداد" /> {/* Changed label */}
                           <TableHead>ملاحظات</TableHead>
                           <TableHead className="text-left">الإجراءات</TableHead>
                       </TableRow>
@@ -1678,7 +1845,8 @@ const ClientTracker: FC = () => {
                               const remainingDebtUSD = convertToUSD(remainingDebt, debt.currency);
                               const amountRepaid = debt.amountRepaid ?? 0;
                               return (
-                                  <TableRow key={debt.id} className="hover:bg-muted/30 transition-colors duration-150">
+                                 <React.Fragment key={debt.id}>
+                                  <TableRow className="hover:bg-muted/30 transition-colors duration-150">
                                       <TableCell className="font-medium text-foreground">{debt.description}</TableCell>
                                       <TableCell className="text-muted-foreground">{debt.debtorName}</TableCell>
                                       <TableCell className="text-muted-foreground">{debt.creditorName}</TableCell>
@@ -1714,13 +1882,112 @@ const ClientTracker: FC = () => {
                                       <TableCell className="text-muted-foreground">{formatDateAr(debt.dueDate)}</TableCell> {/* Arabic date format */}
                                       <TableCell className="text-muted-foreground">{formatDateAr(debt.paidDate)}</TableCell> {/* Arabic date format */}
                                       <TableCell className="text-muted-foreground max-w-[150px] truncate" title={debt.notes || ''}>{debt.notes || '-'}</TableCell>
-                                      <TableCell className="text-left">
+                                      <TableCell className="text-left space-x-1">
+                                          {/* Edit Repayment Button - Show if not fully paid */}
+                                           {debt.status !== 'paid' && (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => {
+                                                    const newDebtId = debt.id === editingRepaymentForDebtId ? null : debt.id;
+                                                    setEditingRepaymentForDebtId(newDebtId);
+                                                    // Pre-fill form when opening
+                                                    if (newDebtId) {
+                                                        repaymentForm.reset({
+                                                            amountRepaid: debt.amountRepaid ?? 0,
+                                                            paidDate: debt.paidDate || new Date(), // Default to now if no previous date
+                                                        });
+                                                    }
+                                                }}
+                                                className="text-xs"
+                                            >
+                                                {editingRepaymentForDebtId === debt.id ? 'إلغاء' : 'تعديل السداد'}
+                                            </Button>
+                                            )}
                                           <Button variant="ghost" size="icon" onClick={() => debt.id && deleteDebt(debt.id)} className="text-destructive hover:text-destructive/80 transition-colors">
                                               <Trash2 className="h-4 w-4" />
                                               <span className="sr-only">حذف</span>
                                           </Button>
                                       </TableCell>
                                   </TableRow>
+
+                                   {/* Repayment Edit Form Row - Conditionally Rendered */}
+                                    {editingRepaymentForDebtId === debt.id && (
+                                        <TableRow className="bg-muted/10 border-t border-dashed">
+                                            <TableCell colSpan={13} className="p-4"> {/* Adjust colSpan */}
+                                                <Form {...repaymentForm}>
+                                                    <form
+                                                        onSubmit={repaymentForm.handleSubmit(onRepaymentSubmit(debt.id!))}
+                                                        className="flex flex-col sm:flex-row items-start sm:items-end gap-4"
+                                                    >
+                                                        <FormField
+                                                            control={repaymentForm.control}
+                                                            name="amountRepaid"
+                                                            render={({ field }) => (
+                                                                <FormItem className="flex-1">
+                                                                    <FormLabel>المبلغ المسدد ({debt.currency})</FormLabel>
+                                                                    <FormControl>
+                                                                        <Input
+                                                                            type="number"
+                                                                            placeholder="أدخل المبلغ المسدد"
+                                                                            {...field}
+                                                                            step="0.01"
+                                                                            className="bg-background"
+                                                                            max={debt.amount} // Set max value
+                                                                        />
+                                                                    </FormControl>
+                                                                     <FormDescription className="text-xs">
+                                                                         المبلغ الإجمالي للدين: {formatCurrency(debt.amount, debt.currency)}
+                                                                     </FormDescription>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                        <FormField
+                                                            control={repaymentForm.control}
+                                                            name="paidDate"
+                                                            render={({ field }) => (
+                                                                <FormItem className="flex flex-col">
+                                                                    <FormLabel className="mb-1">تاريخ آخر سداد</FormLabel>
+                                                                    <Popover>
+                                                                        <PopoverTrigger asChild>
+                                                                            <FormControl>
+                                                                                <Button
+                                                                                    variant={'outline'}
+                                                                                    className={cn(
+                                                                                        'w-[200px] sm:w-[240px] pr-3 text-right font-normal justify-between bg-background',
+                                                                                        !field.value && 'text-muted-foreground'
+                                                                                    )}
+                                                                                >
+                                                                                    {field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}
+                                                                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                                                                </Button>
+                                                                            </FormControl>
+                                                                        </PopoverTrigger>
+                                                                        <PopoverContent className="w-auto p-0" align="start">
+                                                                            <Calendar
+                                                                                mode="single"
+                                                                                selected={field.value}
+                                                                                onSelect={field.onChange}
+                                                                                disabled={(date) => date > new Date() || date < new Date('1900-01-01')}
+                                                                                initialFocus
+                                                                                locale={arSA}
+                                                                            />
+                                                                        </PopoverContent>
+                                                                    </Popover>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                        <Button type="submit" size="sm" className="bg-blue-600 hover:bg-blue-700 text-white">
+                                                            حفظ التعديل
+                                                        </Button>
+                                                    </form>
+                                                </Form>
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                  </React.Fragment>
                               );
                           })
                       ) : (
