@@ -9,7 +9,7 @@ import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { format, startOfMonth as dateFnsStartOfMonth, endOfMonth as dateFnsEndOfMonth, addDays } from 'date-fns'; // Import date-fns functions
 import { arSA } from 'date-fns/locale'; // Import Arabic locale for date display only
-import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle } from 'lucide-react';
+import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle, Edit } from 'lucide-react'; // Added Edit icon
 import useEmblaCarousel from 'embla-carousel-react';
 import Autoplay from 'embla-carousel-autoplay';
 
@@ -313,10 +313,12 @@ const ClientTracker: FC = () => {
   // State for managing which debt's repayment form is open
   const [editingRepaymentForDebtId, setEditingRepaymentForDebtId] = useState<string | null>(null);
 
+
   // Keep toast ref updated
   useEffect(() => {
     toastRef.current = toast;
   }, [toast]);
+
 
   // Fetch exchange rates on mount
   useEffect(() => {
@@ -567,7 +569,7 @@ const ClientTracker: FC = () => {
   function onClientSubmit(values: Client) {
       const newClient = { ...values, id: crypto.randomUUID() }; // Generate a unique ID
       setClients((prevClients) => [...prevClients, newClient]);
-      toastRef.current({ // Use ref here
+      toast({ // Use direct toast call after checking for mount
         title: 'تمت إضافة العميل',
         description: `${values.name} تمت إضافته بنجاح.`,
       });
@@ -600,7 +602,7 @@ const ClientTracker: FC = () => {
             };
 
             setPayments((prevPayments) => [...prevPayments, newPayment]);
-            toastRef.current({ // Use ref here
+            toast({ // Use direct toast call
                 title: 'تمت إضافة دفعة',
                 description: `تم تسجيل دفعة لـ ${client.name} بمبلغ ${formatCurrency(values.paymentAmount, clientCurrency)}.`,
             });
@@ -641,7 +643,7 @@ const ClientTracker: FC = () => {
        const newDebt = { ...finalValues, id: crypto.randomUUID() };
 
        setDebts((prevDebts) => [...prevDebts, newDebt]);
-       toastRef.current({ // Use ref here
+       toast({ // Use direct toast call
            title: 'تمت إضافة الدين',
            description: `تمت إضافة الدين على ${values.debtorName} بنجاح.`,
        });
@@ -698,7 +700,7 @@ const ClientTracker: FC = () => {
 
              if (!validationResult.success) {
                  console.error("Debt validation failed after repayment update:", validationResult.error);
-                 toastRef.current({
+                 toast({ // Use direct toast call
                      title: 'خطأ في تحديث السداد',
                      description: `فشل تحديث السداد. ${validationResult.error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
                      variant: 'destructive',
@@ -719,7 +721,7 @@ const ClientTracker: FC = () => {
                 return newDebts;
             });
 
-            toastRef.current({
+            toast({ // Use direct toast call
                 title: 'تم تحديث السداد',
                 description: `تم تحديث المبلغ المسدد للدين على ${originalDebt.debtorName}. الحالة الآن ${DEBT_STATUSES[newStatus]}.`,
             });
@@ -734,7 +736,7 @@ const ClientTracker: FC = () => {
     setClients((prevClients) => prevClients.filter(client => client.id !== idToDelete));
     // Also delete associated payments
     setPayments((prevPayments) => prevPayments.filter(p => p.clientId !== idToDelete));
-    toastRef.current({ // Use ref here
+    toast({ // Use direct toast call
       title: 'تم حذف العميل',
       description: `تمت إزالة سجل العميل وجميع دفعاته.`,
       variant: 'destructive',
@@ -749,7 +751,7 @@ const ClientTracker: FC = () => {
      const clientName = client ? client.name : 'عميل غير معروف';
 
      setPayments((prevPayments) => prevPayments.filter(p => p.id !== paymentIdToDelete));
-     toastRef.current({ // Use ref here
+     toast({ // Use direct toast call
          title: 'تم حذف الدفعة',
          description: `تمت إزالة دفعة لـ ${clientName} بتاريخ ${formatDateAr(paymentToDelete.paymentDate)}.`,
          variant: 'destructive',
@@ -759,7 +761,7 @@ const ClientTracker: FC = () => {
 
    const deleteDebt = (idToDelete: string) => {
        setDebts((prevDebts) => prevDebts.filter(debt => debt.id !== idToDelete));
-       toastRef.current({ // Use ref here
+       toast({ // Use direct toast call
            title: 'تم حذف الدين',
            description: `تمت إزالة سجل الدين.`,
            variant: 'destructive',
@@ -786,7 +788,7 @@ const ClientTracker: FC = () => {
         if (newStatusTarget === 'paid') {
             // If trying to mark as paid but not fully paid
             if (totalPaid < client.totalProjectCost) {
-                toastRef.current({
+                toast({ // Use direct toast call
                     title: 'لا يمكن التحديث إلى "تم الدفع"',
                     description: `العميل ${client.name} لم يسدد التكلفة الإجمالية بعد. المبلغ المتبقي ${formatCurrency(client.totalProjectCost - totalPaid, client.currency)}. قم بإضافة دفعة لتغطية المبلغ المتبقي.`,
                     variant: 'destructive',
@@ -797,7 +799,7 @@ const ClientTracker: FC = () => {
                 return;
             }
              // If already fully paid, just confirm
-            toastRef.current({
+            toast({ // Use direct toast call
                  title: 'تم التأكيد',
                  description: `حالة ${client.name} هي بالفعل "تم الدفع".`,
              });
@@ -807,7 +809,7 @@ const ClientTracker: FC = () => {
         } else if (newStatusTarget === 'partially_paid') {
             // If trying to mark as partially_paid but no payments exist
             if (totalPaid <= 0) {
-                 toastRef.current({
+                 toast({ // Use direct toast call
                     title: 'لا يمكن التحديث إلى "دفع جزئي"',
                     description: `العميل ${client.name} لم يقم بأي دفعات. قم بإضافة دفعة أولاً.`,
                     variant: 'destructive',
@@ -817,7 +819,7 @@ const ClientTracker: FC = () => {
             }
             // If trying to mark as partially_paid but already fully paid
             if (totalPaid >= client.totalProjectCost) {
-                 toastRef.current({
+                 toast({ // Use direct toast call
                      title: 'تنبيه',
                      description: `العميل ${client.name} قام بالفعل بدفع التكلفة كاملة أو أكثر. الحالة هي "تم الدفع".`,
                      variant: 'default',
@@ -826,13 +828,15 @@ const ClientTracker: FC = () => {
                  return;
             }
              // If conditions met (paid > 0 and paid < totalCost)
-            toastRef.current({
+            toast({ // Use direct toast call
                 title: 'تم التأكيد',
                 description: `حالة ${client.name} هي "دفع جزئي".`,
             });
              // Open payment form if transitioning from 'not_paid'
              if (currentStatus === 'not_paid') {
                  setAddingPaymentForClientId(clientId);
+                 // Pre-fill with sensible defaults or 0?
+                 paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() });
              }
              // No actual data change needed, status is derived. Re-render ensures consistency.
              setClients([...clients]);
@@ -840,7 +844,7 @@ const ClientTracker: FC = () => {
         } else if (newStatusTarget === 'not_paid') {
             // If trying to mark as 'not_paid' but payments exist
             if (totalPaid > 0) {
-                toastRef.current({
+                toast({ // Use direct toast call
                     title: 'لا يمكن التحديث إلى "لم يتم الدفع"',
                     description: `توجد دفعات مسجلة للعميل ${client.name}. لحذف الدفعات وتغيير الحالة، قم بحذف سجلات الدفعات الفردية أولاً.`,
                     variant: 'destructive',
@@ -849,7 +853,7 @@ const ClientTracker: FC = () => {
                 return;
             }
             // If no payments exist, confirm status
-             toastRef.current({
+             toast({ // Use direct toast call
                  title: 'تم التأكيد',
                  description: `حالة ${client.name} هي "لم يتم الدفع".`,
              });
@@ -908,6 +912,12 @@ const ClientTracker: FC = () => {
                toastMessage = `تم تحديث حالة الدين على "${originalDebt.debtorName}" إلى "سداد جزئي". قم بتحديث المبلغ المسدد.`;
                needsRepaymentUpdate = true;
                showRepaymentForm = true; // Open form to input amount
+               // Pre-fill repayment form with 0 amount and today's date
+               repaymentForm.reset({
+                   amountRepaid: 0,
+                   paidDate: new Date(),
+               });
+
           }
            // Set paid date to now if amountRepaid > 0 and no date exists, or if coming from outstanding
           if (updatedDebt.amountRepaid > 0 && (!updatedDebt.paidDate || originalDebt.status === 'outstanding')) {
@@ -921,7 +931,7 @@ const ClientTracker: FC = () => {
       const validationResult = debtSchema.safeParse(updatedDebt);
       if (!validationResult.success) {
            console.error("Validation failed during debt status update:", validationResult.error);
-           toastRef.current({
+           toast({ // Use direct toast call
                title: 'خطأ في تحديث الحالة',
                description: `فشل تحديث حالة الدين. ${validationResult.error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
                variant: 'destructive',
@@ -939,18 +949,20 @@ const ClientTracker: FC = () => {
        });
 
        // Show confirmation toast
-       toastRef.current({
+       toast({ // Use direct toast call
            title: 'تم تحديث الحالة',
            description: toastMessage,
        });
 
         // Open the repayment form if needed
         if (showRepaymentForm) {
-            // Pre-fill form with current values
-             repaymentForm.reset({
-                amountRepaid: updatedDebt.amountRepaid,
-                paidDate: updatedDebt.paidDate || new Date(), // Default to now if no date
-            });
+            // Pre-fill form with current values (or reset values if coming from outstanding)
+            if (originalDebt.status !== 'outstanding') {
+                 repaymentForm.reset({
+                    amountRepaid: updatedDebt.amountRepaid,
+                    paidDate: updatedDebt.paidDate || new Date(), // Default to now if no date
+                });
+            } // Keep reset values if coming from outstanding
             setEditingRepaymentForDebtId(debtId);
         }
   };
@@ -1616,12 +1628,13 @@ const ClientTracker: FC = () => {
                 <TableHead className="text-left">الإجراءات</TableHead>{/* Adjusted alignment for RTL */}
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody>{/* Ensure no whitespace */}
               {sortedClients.length > 0 ? (
                 sortedClients.map((client) => {
                     // Use derived values directly from sortedClients
                     const { derivedStatus: paymentStatus, derivedAmountPaid: amountPaid, derivedRemainingAmount: remainingAmount, derivedPaymentDate: latestPaymentDate } = client;
                     const remainingAmountUSD = convertToUSD(remainingAmount, client.currency);
+                    const isAddingPayment = addingPaymentForClientId === client.id;
 
                     return (
                       <React.Fragment key={client.id}> {/* Use Fragment to wrap row and potential form */}
@@ -1659,7 +1672,7 @@ const ClientTracker: FC = () => {
                          </TableCell>
                         <TableCell className="text-muted-foreground">{formatDateAr(latestPaymentDate)}</TableCell> {/* Use Arabic date format */}
                         <TableCell className="text-left space-x-1"> {/* Adjusted alignment for RTL & Added spacing */}
-                           {/* Add Payment Button - only if not fully paid */}
+                           {/* Add/Edit Payment Button - Show if not fully paid */}
                            {paymentStatus !== 'paid' && (
                              <Button
                                variant="outline"
@@ -1667,14 +1680,22 @@ const ClientTracker: FC = () => {
                                onClick={() => {
                                   const newClientId = client.id === addingPaymentForClientId ? null : client.id;
                                   setAddingPaymentForClientId(newClientId);
-                                  // Reset form when opening for a new client
+                                  // Reset/Pre-fill form when opening
                                   if (newClientId) {
-                                      paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() });
+                                      paymentForm.reset({
+                                          // Pre-fill with 0 or existing partial payment logic if needed
+                                          paymentAmount: 0,
+                                          paymentDate: new Date(),
+                                      });
                                   }
                                }}
-                               className="text-xs"
+                               className={cn(
+                                "text-xs",
+                                isAddingPayment ? "bg-muted text-muted-foreground" : "" // Style when form is open
+                               )}
                              >
-                               {addingPaymentForClientId === client.id ? 'إلغاء' : 'إضافة دفعة'}
+                               {isAddingPayment ? 'إلغاء' : (amountPaid > 0 ? 'تعديل/إضافة دفعة' : 'إضافة دفعة')}
+                               {!isAddingPayment && <Edit className="h-3 w-3 ml-1" />} {/* Add icon when not adding */}
                              </Button>
                            )}
                           <Button variant="ghost" size="icon" onClick={() => client.id && deleteClient(client.id)} className="text-destructive hover:text-destructive/80 transition-colors">
@@ -1685,7 +1706,7 @@ const ClientTracker: FC = () => {
                       </TableRow>
 
                        {/* Payment Form Row - Conditionally Rendered */}
-                        {addingPaymentForClientId === client.id && (
+                        {isAddingPayment && (
                             <TableRow className="bg-muted/10 border-t border-dashed">
                                 <TableCell colSpan={10} className="p-4">
                                     <Form {...paymentForm}>
@@ -1706,8 +1727,12 @@ const ClientTracker: FC = () => {
                                                                 {...field}
                                                                 step="0.01"
                                                                 className="bg-background"
+                                                                max={remainingAmount} // Limit input to remaining amount
                                                             />
                                                         </FormControl>
+                                                         <FormDescription className="text-xs text-yellow-600 dark:text-yellow-400 pt-1 font-medium">
+                                                              المبلغ المتبقي للمشروع: {formatCurrency(remainingAmount, client.currency)}
+                                                        </FormDescription>
                                                         <FormMessage />
                                                     </FormItem>
                                                 )}
@@ -1838,12 +1863,14 @@ const ClientTracker: FC = () => {
                           <TableHead className="text-left">الإجراءات</TableHead>
                       </TableRow>
                   </TableHeader>
-                  <TableBody>
+                  <TableBody>{/* Ensure no whitespace */}
                       {sortedDebts.length > 0 ? (
                           sortedDebts.map((debt) => {
                               const remainingDebt = calculateDebtRemainingAmount(debt);
                               const remainingDebtUSD = convertToUSD(remainingDebt, debt.currency);
                               const amountRepaid = debt.amountRepaid ?? 0;
+                              const isEditingRepayment = editingRepaymentForDebtId === debt.id;
+
                               return (
                                  <React.Fragment key={debt.id}>
                                   <TableRow className="hover:bg-muted/30 transition-colors duration-150">
@@ -1899,9 +1926,13 @@ const ClientTracker: FC = () => {
                                                         });
                                                     }
                                                 }}
-                                                className="text-xs"
+                                                className={cn(
+                                                    "text-xs",
+                                                    isEditingRepayment ? "bg-muted text-muted-foreground" : ""
+                                                )}
                                             >
-                                                {editingRepaymentForDebtId === debt.id ? 'إلغاء' : 'تعديل السداد'}
+                                                {isEditingRepayment ? 'إلغاء' : 'تعديل السداد'}
+                                                {!isEditingRepayment && <Edit className="h-3 w-3 ml-1" />}
                                             </Button>
                                             )}
                                           <Button variant="ghost" size="icon" onClick={() => debt.id && deleteDebt(debt.id)} className="text-destructive hover:text-destructive/80 transition-colors">
@@ -1912,7 +1943,7 @@ const ClientTracker: FC = () => {
                                   </TableRow>
 
                                    {/* Repayment Edit Form Row - Conditionally Rendered */}
-                                    {editingRepaymentForDebtId === debt.id && (
+                                    {isEditingRepayment && (
                                         <TableRow className="bg-muted/10 border-t border-dashed">
                                             <TableCell colSpan={13} className="p-4"> {/* Adjust colSpan */}
                                                 <Form {...repaymentForm}>

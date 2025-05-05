@@ -27,12 +27,12 @@ TableHeader.displayName = "TableHeader"
 const TableBody = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
->(({ className, ...props }, ref) => (
+>(({ className, children, ...props }, ref) => ( // Explicitly include children
   <tbody
     ref={ref}
     className={cn("[&_tr:last-child]:border-0", className)}
     {...props}
-  />
+  >{children}</tbody> // Ensure no whitespace around children
 ))
 TableBody.displayName = "TableBody"
 
@@ -62,9 +62,7 @@ const TableRow = React.forwardRef<
       className
     )}
     {...props}
-  >
-    {children} {/* Render children explicitly inside the tr */}
-  </tr>
+  >{children}</tr> // Ensure no whitespace around children
 ))
 TableRow.displayName = "TableRow"
 
