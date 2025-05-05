@@ -10,7 +10,7 @@ import {
 import type { ChartConfig } from "@/components/ui/chart"
 
 export type ChartData = {
-  date: string; // Represents the day (e.g., '1 May', '2 May')
+  date: string; // Represents the day (e.g., '١ مايو', '٢ مايو') - Arabic format for display
   total: number; // Represents cumulative total in USD for that day
 }
 
@@ -20,19 +20,19 @@ interface ClientPaymentChartProps {
 
 const chartConfig = {
   total: {
-    label: "الدخل التراكمي (USD)", // Label updated to reflect cumulative USD
+    label: "الدخل التراكمي (USD)", // Label updated to reflect cumulative USD (Arabic Label)
     color: "hsl(var(--chart-1))",
   },
 } satisfies ChartConfig
 
 export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
-  // Format currency for tooltip and axis (always USD now)
-  const formatCurrencyUSD = (value: number) => {
+  // Format currency for tooltip and axis using en-US locale (English numbers)
+  const formatCurrencyUSD_en = (value: number) => {
      try {
-       // Format with no decimal places for cleaner axis/tooltip
+       // Format with no decimal places for cleaner axis/tooltip, using en-US locale
        return value.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
      } catch (e) {
-       return `USD ${value.toFixed(0)}`; // Fallback
+       return `USD ${value.toFixed(0)}`; // Fallback with English numerals
      }
   }
 
@@ -43,17 +43,17 @@ export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
           <LineChart accessibilityLayer data={data} margin={{ top: 5, right: 10, left: 10, bottom: 40 }}> {/* Adjusted margins */}
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
-              dataKey="date" // Use the formatted date string ('d MMM')
+              dataKey="date" // Use the formatted date string ('d MMM' in Arabic)
               tickLine={false}
               tickMargin={10}
               axisLine={false}
-              tickFormatter={(value) => value} // Display the formatted date directly
+              tickFormatter={(value) => value} // Display the formatted Arabic date directly
               angle={-45} // Angle ticks for better readability
               textAnchor="end" // Adjust anchor for angled text
               interval="preserveStartEnd" // Show first and last tick, adjust others automatically
             />
              <YAxis
-                tickFormatter={formatCurrencyUSD} // Use USD formatter
+                tickFormatter={formatCurrencyUSD_en} // Use English USD formatter for Y-axis numbers
                 tickLine={false}
                 axisLine={false}
                 tickMargin={5} // Adjust margin
@@ -67,12 +67,13 @@ export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
               content={
                   <ChartTooltipContent
                       formatter={(value, name, props) => {
-                           // Use the label (date) from the payload
+                           // Use the label (Arabic date) from the payload
                           const dateLabel = props.payload?.date;
                           return (
-                            <div className="flex flex-col">
+                            <div className="flex flex-col items-end" dir="ltr"> {/* Force LTR for tooltip content */}
                                 <span className="text-xs text-muted-foreground">{dateLabel}</span>
-                                <span className="font-semibold">{formatCurrencyUSD(value as number)}</span>
+                                {/* Format currency value with English numbers */}
+                                <span className="font-semibold">{formatCurrencyUSD_en(value as number)}</span>
                             </div>
                           );
                       }}
