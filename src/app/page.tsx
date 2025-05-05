@@ -62,6 +62,7 @@ import { Textarea } from '@/components/ui/textarea'; // Import Textarea
 
 // Import the Genkit flow function
 import { sendDailyReport } from '@/ai/flows/send-daily-report-flow';
+import type { DailyReportInput } from '@/ai/flows/schemas/daily-report-schemas'; // Import only the input type
 
 // Define constants for payment status and currency
 const PAYMENT_STATUSES = {
@@ -324,19 +325,24 @@ const ClientTracker: FC = () => {
   const [isSendingReport, setIsSendingReport] = useState(false);
 
   // Effect to show toasts after render (avoids set state during render)
-  const [toastQueue, setToastQueue] = useState<Parameters<typeof toast>[]>([]);
+  const toastQueueRef = useRef<Parameters<typeof toast>[]>([]); // Use ref to avoid state dependency
+
+  // Trigger state for processing toast queue
+  const [toastProcessTrigger, setToastProcessTrigger] = useState(0);
 
   const showToast = useCallback((props: Parameters<typeof toast>[0]) => {
-      setToastQueue(prev => [...prev, [props]]);
-  }, []); // No dependency on toast itself
+      toastQueueRef.current.push([props]);
+      // Use timeout to ensure state update happens after current render cycle
+      setTimeout(() => setToastProcessTrigger(c => c + 1), 0);
+  }, []); // Dependency on setToastProcessTrigger if it were a state setter from useState
 
+  // Process the toast queue when the trigger changes
   useEffect(() => {
-      if (toastQueue.length > 0) {
-          const [toastProps] = toastQueue[0];
-          toast(toastProps); // Call the toast function from the hook
-          setToastQueue(prev => prev.slice(1)); // Remove the shown toast from the queue
-      }
-  }, [toastQueue, toast]); // Depend on toastQueue and the toast function
+    if (toastQueueRef.current.length > 0) {
+      const [toastProps] = toastQueueRef.current.shift()!;
+      toast(toastProps);
+    }
+  }, [toastProcessTrigger, toast]); // Depend on the trigger and the toast function
 
 
   // Fetch exchange rates on mount
@@ -588,7 +594,7 @@ const ClientTracker: FC = () => {
   const onClientSubmit = useCallback((values: Client) => {
       const newClient = { ...values, id: crypto.randomUUID() }; // Generate a unique ID
       setClients((prevClients) => [...prevClients, newClient]);
-      showToast({ // Use direct toast call after checking for mount
+      showToast({ // Use showToast helper
         title: 'تمت إضافة العميل',
         description: `${values.name} تمت إضافته بنجاح.`,
       });
@@ -621,7 +627,7 @@ const ClientTracker: FC = () => {
             };
 
             setPayments((prevPayments) => [...prevPayments, newPayment]);
-            showToast({ // Use direct toast call
+            showToast({ // Use showToast helper
                 title: 'تمت إضافة دفعة',
                 description: `تم تسجيل دفعة لـ ${client.name} بمبلغ ${formatCurrency(values.paymentAmount, clientCurrency)}.`,
             });
@@ -662,7 +668,7 @@ const ClientTracker: FC = () => {
        const newDebt = { ...finalValues, id: crypto.randomUUID() };
 
        setDebts((prevDebts) => [...prevDebts, newDebt]);
-       showToast({ // Use direct toast call
+       showToast({ // Use showToast helper
            title: 'تمت إضافة الدين',
            description: `تمت إضافة الدين على ${values.debtorName} بنجاح.`,
        });
@@ -719,7 +725,7 @@ const ClientTracker: FC = () => {
 
              if (!validationResult.success) {
                  console.error("Debt validation failed after repayment update:", validationResult.error);
-                 // Show toast using useEffect to avoid state update during render
+                 // Show toast using showToast helper
                  showToast({
                      title: 'خطأ في تحديث السداد',
                      description: `فشل تحديث السداد. ${validationResult.error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
@@ -741,7 +747,7 @@ const ClientTracker: FC = () => {
                 return newDebts;
             });
 
-            // Show confirmation toast using useEffect
+            // Show confirmation toast using showToast helper
              showToast({
                 title: 'تم تحديث السداد',
                 description: `تم تحديث المبلغ المسدد للدين على ${originalDebt.debtorName}. الحالة الآن ${DEBT_STATUSES[newStatus]}.`,
@@ -757,7 +763,7 @@ const ClientTracker: FC = () => {
     setClients((prevClients) => prevClients.filter(client => client.id !== idToDelete));
     // Also delete associated payments
     setPayments((prevPayments) => prevPayments.filter(p => p.clientId !== idToDelete));
-     // Show toast using useEffect
+     // Show toast using showToast helper
      showToast({
       title: 'تم حذف العميل',
       description: `تمت إزالة سجل العميل وجميع دفعاته.`,
@@ -777,7 +783,7 @@ const ClientTracker: FC = () => {
      const clientName = client ? client.name : 'عميل غير معروف';
 
      setPayments((prevPayments) => prevPayments.filter(p => p.id !== paymentIdToDelete));
-     // Show toast using useEffect
+     // Show toast using showToast helper
       showToast({
          title: 'تم حذف الدفعة',
          description: `تمت إزالة دفعة لـ ${clientName} بتاريخ ${formatDateAr(paymentToDelete.paymentDate)}.`,
@@ -788,7 +794,7 @@ const ClientTracker: FC = () => {
 
    const deleteDebt = useCallback((idToDelete: string) => {
        setDebts((prevDebts) => prevDebts.filter(debt => debt.id !== idToDelete));
-        // Show toast using useEffect
+        // Show toast using showToast helper
         showToast({
            title: 'تم حذف الدين',
            description: `تمت إزالة سجل الدين.`,
@@ -859,7 +865,7 @@ const ClientTracker: FC = () => {
             }
         }
 
-         // Show toast using useEffect mechanism
+         // Show toast using showToast helper
          showToast({ title: toastTitle, description: toastDescription, variant: toastVariant });
 
          // Open or close the payment form *after* potential state updates from toast
@@ -874,6 +880,7 @@ const ClientTracker: FC = () => {
          // Trigger re-render if the status didn't actually change data-wise but Select might need reset
          // This ensures the Select reflects the *actual* derived status if the user tried an invalid change.
          // The derived status calculation in useMemo will handle the correct display.
+         // A minimal state update will trigger the re-render.
          setClients(prev => [...prev]);
 
 
@@ -951,7 +958,7 @@ const ClientTracker: FC = () => {
       const validationResult = debtSchema.safeParse(updatedDebt);
       if (!validationResult.success) {
            console.error("Validation failed during debt status update:", validationResult.error);
-           // Show toast using useEffect
+           // Show toast using showToast helper
             showToast({
                title: 'خطأ في تحديث الحالة',
                description: `فشل تحديث حالة الدين. ${validationResult.error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
@@ -969,7 +976,7 @@ const ClientTracker: FC = () => {
            return newDebts;
        });
 
-       // Show confirmation toast using useEffect
+       // Show confirmation toast using showToast helper
         showToast({
            title: 'تم تحديث الحالة',
            description: toastMessage,
@@ -1285,7 +1292,7 @@ const ClientTracker: FC = () => {
       try {
           // Prepare data needed for the report (similar to what the flow expects)
           // Ensure Date objects are converted to strings for the flow input
-          const reportInputData = {
+          const reportInputData: DailyReportInput = {
                clients: clients.map(c => ({ ...c })), // Pass copies of client data
                debts: debts.map(d => ({
                    ...d,
@@ -1306,8 +1313,8 @@ const ClientTracker: FC = () => {
 
           if (result.success) {
               showToast({
-                  title: 'تم إرسال التقرير بنجاح',
-                  description: result.message,
+                  title: 'تمت محاكاة إرسال التقرير', // Updated title
+                  description: `تم تسجيل محاكاة إرسال التقرير بنجاح. يرجى مراجعة وحدة التحكم (console) لرؤية تفاصيل البريد الإلكتروني المحاكاة. (لا يوجد بريد إلكتروني حقيقي تم إرساله). ${result.message}`, // Updated description
               });
           } else {
               throw new Error(result.message); // Treat flow failure as an error
@@ -1388,7 +1395,7 @@ const ClientTracker: FC = () => {
                 )}
             </Button>
             <p className="text-xs text-muted-foreground mt-2">
-                اضغط لإرسال التقرير اليومي المجمع إلى البريد الإلكتروني المسجل.
+                اضغط لمحاكاة إرسال التقرير اليومي المجمع إلى البريد الإلكتروني المسجل (لن يتم إرسال بريد حقيقي).
             </p>
         </div>
 
