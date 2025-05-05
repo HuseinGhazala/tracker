@@ -2,7 +2,7 @@
 "use client"
 
 import * as React from "react"
-import { ScatterChart, Scatter, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, ZAxis } from "recharts"
+import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts" // Changed imports
 
 import {
   ChartContainer,
@@ -12,7 +12,7 @@ import type { ChartConfig } from "@/components/ui/chart"
 import { format } from 'date-fns';
 import { arSA } from 'date-fns/locale'; // Import Arabic locale for date display
 
-import type { Currency } from '@/app/page'; // Import Currency type if needed, or define locally
+import type { Currency } from '@/app/page'; // Import Currency type
 const CURRENCIES = {
   EGP: 'جنيه مصري',
   SAR: 'ريال سعودي',
@@ -21,24 +21,25 @@ const CURRENCIES = {
   EUR: 'يورو',
 } as const;
 
-// Define the expected structure for individual payment data points
-export type ChartData = {
-  id: string; // Unique identifier for the payment point (e.g., date-index)
-  date: Date; // Original Date object for the payment
+// Define the expected structure for cumulative income data points
+export type CumulativeChartData = {
+  date: Date; // Original Date object for the point in time
   dateFormatted: string; // Formatted date string for display ('d MMM' in Arabic)
-  amountUSD: number; // Payment amount converted to USD
-  clientName: string; // Name of the client making the payment
-  originalAmount: number; // Original payment amount
-  originalCurrency: Currency; // Original payment currency
+  cumulativeAmountUSD: number; // Cumulative income amount in USD up to this date
+  // Optional: Include details of the last payment that contributed to this point
+  paymentAmountUSD?: number;
+  clientName?: string;
+  originalAmount?: number;
+  originalCurrency?: Currency;
 }
 
 interface ClientPaymentChartProps {
-  data: ChartData[];
+  data: CumulativeChartData[];
 }
 
 const chartConfig = {
-  payments: {
-    label: "الدفعات (USD)", // Legend label
+  cumulativeIncome: { // Updated key for clarity
+    label: "الدخل التراكمي (USD)", // Legend label
     color: "hsl(var(--chart-1))", // Use theme color
   },
 } satisfies ChartConfig
@@ -79,22 +80,15 @@ export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
   const timeDomain: [number, number] | ['auto', 'auto'] = React.useMemo(() => {
       if (data.length === 0) return ['auto', 'auto'];
       const dates = data.map(d => d.date.getTime());
-      // Add some padding to the start/end dates if desired
       const minTime = Math.min(...dates);
       const maxTime = Math.max(...dates);
-       // Example padding: 1 day before and after
-      // const padding = 24 * 60 * 60 * 1000;
-      // return [minTime - padding, maxTime + padding];
       return [minTime, maxTime];
   }, [data]);
 
-  const amountDomain: [number, number] | ['auto', 'auto'] = React.useMemo(() => {
-      if (data.length === 0) return [0, 'auto']; // Start at 0 if no data
-      const amounts = data.map(d => d.amountUSD);
-      // Ensure the domain starts at 0
-      // const maxAmount = Math.max(...amounts);
-      // const padding = maxAmount * 0.1; // 10% padding at the top
-      // return [0, maxAmount + padding];
+  // Y-axis domain starts at 0 for cumulative income
+  const amountDomain: [number, number | string] | ['auto', 'auto'] = React.useMemo(() => {
+      if (data.length === 0) return [0, 'auto'];
+       // Ensure the domain starts at 0
        return [0, 'auto']; // Let Recharts handle the max, but start at 0
   }, [data]);
 
@@ -102,8 +96,26 @@ export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
   return (
     <ChartContainer config={chartConfig} className="min-h-[350px] w-full pr-5"> {/* Increased height */}
        <ResponsiveContainer width="100%" height={350}>
-          <ScatterChart margin={{ top: 20, right: 20, bottom: 60, left: 20 }}> {/* Adjusted margins */}
-            <CartesianGrid strokeDasharray="3 3" />
+          {/* Changed to AreaChart */}
+          <AreaChart
+            data={data}
+            margin={{ top: 20, right: 20, bottom: 60, left: 20 }} // Adjusted margins
+          >
+            <defs>
+                <linearGradient id="fillCumulative" x1="0" y1="0" x2="0" y2="1">
+                  <stop
+                    offset="5%"
+                    stopColor="hsl(var(--chart-1))" // Use theme color
+                    stopOpacity={0.8}
+                  />
+                  <stop
+                    offset="95%"
+                    stopColor="hsl(var(--chart-1))" // Use theme color
+                    stopOpacity={0.1}
+                  />
+                </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />{/* Optionally hide vertical lines */}
             <XAxis
               type="number" // Use number for time-based axis
               dataKey="date" // Use the original Date object's time value
@@ -119,54 +131,59 @@ export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
             />
              <YAxis
                 type="number"
-                dataKey="amountUSD"
+                dataKey="cumulativeAmountUSD" // Use cumulative amount for Y-axis
                 domain={amountDomain} // Start at 0
                 tickFormatter={formatCurrencyUSD_en} // Use English USD formatter for Y-axis numbers
                 tickLine={false}
                 axisLine={false}
                 tickMargin={5}
-                name="المبلغ (USD)" // Axis name
+                name="الدخل التراكمي (USD)" // Axis name
                 // allowDataOverflow={true} // Allow points slightly outside domain if needed
              />
-             {/* ZAxis is typically used for bubble size, not needed for basic scatter */}
-             {/* <ZAxis type="number" range={[50, 50]} /> */}
             <Tooltip
               cursor={{ strokeDasharray: '3 3' }}
               content={
                   <ChartTooltipContent
                       // Hide the default indicator (dot/line) provided by ChartTooltipContent
-                      hideIndicator={true}
-                      // Custom formatter to display payment details
+                      indicator="line" // Show line indicator for area chart
+                      // Custom formatter to display cumulative details
                       formatter={(value, name, props) => {
                            // props.payload contains the data for the hovered point
-                           const payload = props.payload as ChartData | undefined;
-                           if (!payload) return null;
+                           const payload = props.payload as CumulativeChartData | undefined;
+                           if (!payload || name !== 'cumulativeIncome') return null;
 
                            return (
                              <div className="flex flex-col items-end text-xs p-1" dir="ltr"> {/* LTR for alignment */}
-                                 <span className="font-semibold mb-1">{payload.clientName}</span>
-                                 <span className="text-muted-foreground">{payload.dateFormatted}</span>
-                                 <span className="font-medium">{formatCurrency_en(payload.amountUSD, 'USD')}</span>
-                                 <span className="text-muted-foreground text-[10px]">
-                                    ({formatCurrency_en(payload.originalAmount, payload.originalCurrency)})
+                                 <span className="font-semibold mb-1">
+                                    {formatCurrency_en(payload.cumulativeAmountUSD, 'USD')}
                                  </span>
+                                  <span className="text-muted-foreground">في {payload.dateFormatted}</span>
+                                 {/* Optionally show details of the last payment contributing to this point */}
+                                 {payload.paymentAmountUSD && payload.paymentAmountUSD > 0 && payload.clientName && (
+                                     <span className="text-muted-foreground text-[10px] mt-1">
+                                        (+{formatCurrency_en(payload.paymentAmountUSD, 'USD')} من {payload.clientName})
+                                     </span>
+                                 )}
                              </div>
                            );
                       }}
-                      // Hide the generic label usually derived from dataKey
-                       labelFormatter={() => null}
+                      // Hide the generic label derived from dataKey
+                       labelFormatter={() => "الدخل التراكمي"}
                    />
                 }
             />
-            <Scatter
-                name="الدفعات" // Name for the legend/tooltip series
-                data={data}
-                fill="var(--color-payments)" // Use theme color
-                // shape="circle" // Default shape
-                // You can customize the shape if needed, e.g., make it larger
-                // shape={<circle r={6} />}
+             {/* Changed to Area component */}
+            <Area
+                dataKey="cumulativeAmountUSD" // Data key for the area
+                type="monotone" // Smooth curve
+                fill="url(#fillCumulative)" // Use the gradient fill
+                fillOpacity={1}
+                stroke="hsl(var(--chart-1))" // Use theme color for the line
+                strokeWidth={2}
+                stackId="a" // Required for AreaChart, even with one area
+                name="cumulativeIncome" // Match the key in chartConfig
              />
-          </ScatterChart>
+          </AreaChart>
        </ResponsiveContainer>
     </ChartContainer>
   )

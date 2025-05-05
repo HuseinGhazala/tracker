@@ -50,7 +50,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { ClientPaymentChart, type ChartData } from '@/components/client-payment-chart'; // Import chart component
+import { ClientPaymentChart, type CumulativeChartData } from '@/components/client-payment-chart'; // Import chart component and new type
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Textarea } from '@/components/ui/textarea'; // Import Textarea
 
@@ -78,7 +78,7 @@ const CURRENCIES = {
   CAD: 'دولار كندي',
   EUR: 'يورو',
 } as const;
-type Currency = keyof typeof CURRENCIES;
+export type Currency = keyof typeof CURRENCIES; // Export Currency type
 
 // ----- SCHEMA DEFINITIONS -----
 
@@ -302,7 +302,6 @@ const ClientTracker: FC = () => {
   const [clientSortConfig, setClientSortConfig] = useState<{ key: keyof Client | 'derivedStatus' | 'derivedAmountPaid' | 'derivedRemainingAmount' | 'derivedPaymentDate' | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
   const [debtSortConfig, setDebtSortConfig] = useState<{ key: keyof Debt | 'remainingDebt' | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
   const { toast } = useToast();
-  const toastRef = useRef(toast); // Create a ref for toast
   const [isMounted, setIsMounted] = useState(false); // Track mount state
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates | null>(null); // USD to OTHER rates
   const [rateLoading, setRateLoading] = useState(true);
@@ -312,12 +311,6 @@ const ClientTracker: FC = () => {
   const [addingPaymentForClientId, setAddingPaymentForClientId] = useState<string | null>(null);
   // State for managing which debt's repayment form is open
   const [editingRepaymentForDebtId, setEditingRepaymentForDebtId] = useState<string | null>(null);
-
-
-  // Keep toast ref updated
-  useEffect(() => {
-    toastRef.current = toast;
-  }, [toast]);
 
 
   // Fetch exchange rates on mount
@@ -566,7 +559,7 @@ const ClientTracker: FC = () => {
   // ----- DATA MANIPULATION HANDLERS -----
 
   // Client Submit Handler (Only adds new clients)
-  function onClientSubmit(values: Client) {
+  const onClientSubmit = useCallback((values: Client) => {
       const newClient = { ...values, id: crypto.randomUUID() }; // Generate a unique ID
       setClients((prevClients) => [...prevClients, newClient]);
       toast({ // Use direct toast call after checking for mount
@@ -574,10 +567,10 @@ const ClientTracker: FC = () => {
         description: `${values.name} تمت إضافته بنجاح.`,
       });
       clientForm.reset(); // Reset form fields after submission
-  }
+  }, [toast, clientForm]); // Include clientForm in dependencies
 
     // Payment Submit Handler (Adds a payment record for a specific client)
-    function onPaymentSubmit(clientId: string, clientCurrency: Currency) {
+    const onPaymentSubmit = useCallback((clientId: string, clientCurrency: Currency) => {
         return (values: PaymentFormData) => {
             const client = clients.find(c => c.id === clientId);
             if (!client) return;
@@ -609,11 +602,11 @@ const ClientTracker: FC = () => {
             paymentForm.reset(); // Reset payment form
             setAddingPaymentForClientId(null); // Close the form after submission
         };
-    }
+    }, [clients, payments, toast, paymentForm]); // Added dependencies
 
 
   // Debt Submit Handler
-   function onDebtSubmit(values: Debt) {
+   const onDebtSubmit = useCallback((values: Debt) => {
        let finalValues = { ...values };
 
         // Ensure amountRepaid is 0 if status is outstanding
@@ -659,10 +652,10 @@ const ClientTracker: FC = () => {
             paidDate: undefined,
             notes: '',
        });
-   }
+   }, [toast, debtForm]); // Include debtForm
 
     // Repayment Submit Handler (Updates an existing debt's repayment info)
-    function onRepaymentSubmit(debtId: string) {
+    const onRepaymentSubmit = useCallback((debtId: string) => {
         return (values: RepaymentFormData) => {
             const debtIndex = debts.findIndex(d => d.id === debtId);
             if (debtIndex === -1) return;
@@ -729,10 +722,10 @@ const ClientTracker: FC = () => {
             repaymentForm.reset(); // Reset repayment form
             setEditingRepaymentForDebtId(null); // Close the form
         };
-    }
+    }, [debts, toast, repaymentForm]); // Added dependencies
 
 
-  const deleteClient = (idToDelete: string) => {
+  const deleteClient = useCallback((idToDelete: string) => {
     setClients((prevClients) => prevClients.filter(client => client.id !== idToDelete));
     // Also delete associated payments
     setPayments((prevPayments) => prevPayments.filter(p => p.clientId !== idToDelete));
@@ -741,9 +734,9 @@ const ClientTracker: FC = () => {
       description: `تمت إزالة سجل العميل وجميع دفعاته.`,
       variant: 'destructive',
     });
-  };
+  }, [toast]); // Added toast
 
-   const deletePayment = (paymentIdToDelete: string) => {
+   const deletePayment = useCallback((paymentIdToDelete: string) => {
      const paymentToDelete = payments.find(p => p.id === paymentIdToDelete);
      if (!paymentToDelete) return;
 
@@ -756,10 +749,10 @@ const ClientTracker: FC = () => {
          description: `تمت إزالة دفعة لـ ${clientName} بتاريخ ${formatDateAr(paymentToDelete.paymentDate)}.`,
          variant: 'destructive',
      });
-   };
+   }, [payments, clients, toast]); // Added dependencies
 
 
-   const deleteDebt = (idToDelete: string) => {
+   const deleteDebt = useCallback((idToDelete: string) => {
        setDebts((prevDebts) => prevDebts.filter(debt => debt.id !== idToDelete));
        toast({ // Use direct toast call
            title: 'تم حذف الدين',
@@ -770,11 +763,11 @@ const ClientTracker: FC = () => {
         if (editingRepaymentForDebtId === idToDelete) {
             setEditingRepaymentForDebtId(null);
         }
-   };
+   }, [editingRepaymentForDebtId, toast]); // Added dependencies
 
 
    // Function to handle status updates triggered from the Select dropdown in Client Table
-   const handleClientStatusChange = (clientId: string, newStatusTarget: PaymentStatus) => {
+   const handleClientStatusChange = useCallback((clientId: string, newStatusTarget: PaymentStatus) => {
         const client = clients.find(c => c.id === clientId);
         if (!client) return;
 
@@ -794,8 +787,7 @@ const ClientTracker: FC = () => {
                     variant: 'destructive',
                 });
                 // Revert visual state (needed if Select is uncontrolled within the table row)
-                // Force a re-render might be the simplest way if not managing select state externally
-                setClients([...clients]); // Trigger re-render
+                setClients(prev => [...prev]); // Trigger re-render
                 return;
             }
              // If already fully paid, just confirm
@@ -803,20 +795,9 @@ const ClientTracker: FC = () => {
                  title: 'تم التأكيد',
                  description: `حالة ${client.name} هي بالفعل "تم الدفع".`,
              });
-             // No actual state change, but might need visual confirmation if select was optimistic
-             setClients([...clients]); // Trigger re-render if needed
+             setClients(prev => [...prev]); // Trigger re-render if needed
 
         } else if (newStatusTarget === 'partially_paid') {
-            // If trying to mark as partially_paid but no payments exist
-            if (totalPaid <= 0) {
-                 toast({ // Use direct toast call
-                    title: 'لا يمكن التحديث إلى "دفع جزئي"',
-                    description: `العميل ${client.name} لم يقم بأي دفعات. قم بإضافة دفعة أولاً.`,
-                    variant: 'destructive',
-                 });
-                setClients([...clients]); // Revert visual state
-                return;
-            }
             // If trying to mark as partially_paid but already fully paid
             if (totalPaid >= client.totalProjectCost) {
                  toast({ // Use direct toast call
@@ -824,22 +805,28 @@ const ClientTracker: FC = () => {
                      description: `العميل ${client.name} قام بالفعل بدفع التكلفة كاملة أو أكثر. الحالة هي "تم الدفع".`,
                      variant: 'default',
                  });
-                 setClients([...clients]); // Revert visual state
+                 setClients(prev => [...prev]); // Revert visual state
                  return;
             }
-             // If conditions met (paid > 0 and paid < totalCost)
-            toast({ // Use direct toast call
-                title: 'تم التأكيد',
-                description: `حالة ${client.name} هي "دفع جزئي".`,
-            });
-             // Open payment form if transitioning from 'not_paid'
-             if (currentStatus === 'not_paid') {
-                 setAddingPaymentForClientId(clientId);
-                 // Pre-fill with sensible defaults or 0?
-                 paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() });
-             }
-             // No actual data change needed, status is derived. Re-render ensures consistency.
-             setClients([...clients]);
+
+            // Open payment form if transitioning from 'not_paid' or just confirming 'partially_paid'
+            // Always open the form when selecting 'partially_paid' for clarity
+            setAddingPaymentForClientId(clientId);
+            paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() });
+
+            // If coming from not_paid, no payments exist yet
+            if (totalPaid <= 0) {
+                 toast({ // Use direct toast call
+                    title: 'إضافة دفعة أولى',
+                    description: `حالة ${client.name} الآن "دفع جزئي". الرجاء إضافة أول دفعة.`,
+                 });
+            } else { // Already partially paid, confirming or editing
+                toast({ // Use direct toast call
+                    title: 'تعديل الدفعة',
+                    description: `حالة ${client.name} هي "دفع جزئي". يمكنك تعديل أو إضافة دفعة جديدة.`,
+                });
+            }
+             setClients(prev => [...prev]); // Trigger re-render for consistency
 
         } else if (newStatusTarget === 'not_paid') {
             // If trying to mark as 'not_paid' but payments exist
@@ -849,22 +836,25 @@ const ClientTracker: FC = () => {
                     description: `توجد دفعات مسجلة للعميل ${client.name}. لحذف الدفعات وتغيير الحالة، قم بحذف سجلات الدفعات الفردية أولاً.`,
                     variant: 'destructive',
                 });
-                 setClients([...clients]); // Revert visual state
-                return;
+                 setClients(prev => [...prev]); // Revert visual state
+                 return;
             }
             // If no payments exist, confirm status
              toast({ // Use direct toast call
                  title: 'تم التأكيد',
                  description: `حالة ${client.name} هي "لم يتم الدفع".`,
              });
-             // No data change needed. Re-render ensures consistency.
-             setClients([...clients]);
+             setClients(prev => [...prev]); // No data change needed. Re-render ensures consistency.
+             // Close payment form if it was open for this client
+             if (addingPaymentForClientId === clientId) {
+                 setAddingPaymentForClientId(null);
+             }
         }
-   };
+   }, [clients, payments, toast, paymentForm, addingPaymentForClientId]); // Added dependencies
 
 
   // Function to handle status updates triggered from the Select dropdown in Debt Table
-  const updateDebtStatus = (debtId: string, newStatus: DebtStatus) => {
+  const updateDebtStatus = useCallback((debtId: string, newStatus: DebtStatus) => {
       const debtIndex = debts.findIndex(d => d.id === debtId);
       if (debtIndex === -1) return;
 
@@ -875,7 +865,6 @@ const ClientTracker: FC = () => {
 
       let updatedDebt = { ...originalDebt, status: newStatus };
       let showRepaymentForm = false;
-      let needsRepaymentUpdate = false;
       let toastMessage = '';
 
       if (newStatus === 'outstanding') {
@@ -898,32 +887,25 @@ const ClientTracker: FC = () => {
               setEditingRepaymentForDebtId(null);
            }
       } else { // partially_paid
-          // If coming from 'paid', reset amountRepaid to previous value or prompt
-          if (originalDebt.status === 'paid') {
-              // Revert amountRepaid to something less than total? Or prompt?
-              // For simplicity, let's keep the full amount but prompt user to adjust.
-              // updatedDebt.amountRepaid = originalDebt.amountRepaid ?? 0; // Keep previous repaid amount if available?
-               toastMessage = `تم تحديث حالة الدين على "${originalDebt.debtorName}" إلى "سداد جزئي". يرجى تعديل المبلغ المسدد.`;
-               needsRepaymentUpdate = true; // Prompt user to update
-               showRepaymentForm = true; // Open form to force update
-          } else { // Coming from 'outstanding'
-               // amountRepaid should ideally be updated via the form
-               updatedDebt.amountRepaid = originalDebt.amountRepaid ?? 0; // Keep current (likely 0)
-               toastMessage = `تم تحديث حالة الدين على "${originalDebt.debtorName}" إلى "سداد جزئي". قم بتحديث المبلغ المسدد.`;
-               needsRepaymentUpdate = true;
-               showRepaymentForm = true; // Open form to input amount
-               // Pre-fill repayment form with 0 amount and today's date
-               repaymentForm.reset({
-                   amountRepaid: 0,
-                   paidDate: new Date(),
-               });
+            toastMessage = `تم تحديث حالة الدين على "${originalDebt.debtorName}" إلى "سداد جزئي". يرجى تعديل المبلغ المسدد.`;
+            showRepaymentForm = true; // Always open form when setting to partially_paid
 
-          }
-           // Set paid date to now if amountRepaid > 0 and no date exists, or if coming from outstanding
-          if (updatedDebt.amountRepaid > 0 && (!updatedDebt.paidDate || originalDebt.status === 'outstanding')) {
-              updatedDebt.paidDate = new Date();
-          } else if (updatedDebt.amountRepaid <= 0) {
-              updatedDebt.paidDate = undefined; // Clear date if no repayment
+           // If coming from 'paid', reset amountRepaid to 0 or previous? Let's reset to 0 for clarity.
+            if (originalDebt.status === 'paid') {
+                updatedDebt.amountRepaid = 0; // Start fresh
+                 updatedDebt.paidDate = undefined; // Clear date as well
+                repaymentForm.reset({ amountRepaid: 0, paidDate: new Date() });
+            } else { // Coming from 'outstanding'
+                 updatedDebt.amountRepaid = originalDebt.amountRepaid ?? 0; // Keep current (likely 0)
+                 // Pre-fill form with 0 amount and today's date if amountRepaid is 0
+                repaymentForm.reset({
+                    amountRepaid: updatedDebt.amountRepaid, // Use current repaid amount
+                    paidDate: updatedDebt.paidDate || new Date(), // Use existing date or today
+                });
+            }
+           // Ensure date is cleared if amountRepaid becomes 0
+          if (updatedDebt.amountRepaid <= 0) {
+              updatedDebt.paidDate = undefined;
           }
       }
 
@@ -937,7 +919,7 @@ const ClientTracker: FC = () => {
                variant: 'destructive',
            });
            // Revert visual state in Select (important if uncontrolled)
-           setDebts([...debts]); // Trigger re-render
+           setDebts(prev => [...prev]); // Trigger re-render
            return; // Stop the update
       }
 
@@ -956,16 +938,10 @@ const ClientTracker: FC = () => {
 
         // Open the repayment form if needed
         if (showRepaymentForm) {
-            // Pre-fill form with current values (or reset values if coming from outstanding)
-            if (originalDebt.status !== 'outstanding') {
-                 repaymentForm.reset({
-                    amountRepaid: updatedDebt.amountRepaid,
-                    paidDate: updatedDebt.paidDate || new Date(), // Default to now if no date
-                });
-            } // Keep reset values if coming from outstanding
             setEditingRepaymentForDebtId(debtId);
+            // Ensure form is pre-filled correctly (already handled by repaymentForm.reset above)
         }
-  };
+  }, [debts, toast, repaymentForm, editingRepaymentForDebtId]); // Added dependencies
 
 
    // Convert any currency to USD
@@ -1170,13 +1146,13 @@ const ClientTracker: FC = () => {
 
  // ----- CHART DATA -----
 
- // Process data for the chart (individual payments in USD over time)
- const chartData: ChartData[] | null = useMemo(() => {
+ // Process data for the cumulative chart (total USD income over time for the current month)
+ const cumulativeChartData: CumulativeChartData[] | null = useMemo(() => {
    if (!isMounted || rateLoading || !exchangeRates) return null; // Return null if rates not ready
 
    const now = new Date();
-   const startOfMonth = dateFnsStartOfMonth(now);
-   const endOfMonth = dateFnsEndOfMonth(now);
+   const startOfMonthDate = dateFnsStartOfMonth(now);
+   const endOfMonthDate = dateFnsEndOfMonth(now);
 
    // Filter payments within the current month and convert to USD
    const paymentsInMonthUSD = payments
@@ -1184,12 +1160,13 @@ const ClientTracker: FC = () => {
        (payment) =>
          payment.paymentDate &&
          !isNaN(payment.paymentDate.getTime()) &&
-         payment.paymentDate >= startOfMonth &&
-         payment.paymentDate <= endOfMonth
+         payment.paymentDate >= startOfMonthDate &&
+         payment.paymentDate <= endOfMonthDate
      )
      .map(payment => ({
        date: payment.paymentDate!, // Keep the original date object
        amountUSD: convertToUSD(payment.amount, payment.currency) ?? 0,
+       // Add other details if needed for tooltip later
        clientName: clients.find(c => c.id === payment.clientId)?.name || 'عميل غير معروف',
        originalAmount: payment.amount,
        originalCurrency: payment.currency,
@@ -1197,19 +1174,60 @@ const ClientTracker: FC = () => {
      .filter(p => p.amountUSD > 0) // Only include payments with a positive USD amount
      .sort((a, b) => a.date.getTime() - b.date.getTime()); // Sort payments by date
 
-   // Map to the structure required by the chart, adding a formatted date string
-    const chartEntries = paymentsInMonthUSD.map((payment, index) => ({
-        // Use a unique identifier including index in case of same-day payments
-        id: `${format(payment.date, 'yyyy-MM-dd')}-${index}`,
-        date: payment.date, // Keep the Date object for potential future use
-        dateFormatted: format(payment.date, 'd MMM', { locale: arSA }), // Arabic date format for X-axis label
-        amountUSD: payment.amountUSD,
-        clientName: payment.clientName,
-        originalAmount: payment.originalAmount,
-        originalCurrency: payment.originalCurrency,
-    }));
+   // Calculate cumulative income
+   let cumulativeAmount = 0;
+   const cumulativeDataPoints = paymentsInMonthUSD.map((payment, index) => {
+       cumulativeAmount += payment.amountUSD;
+       return {
+           date: payment.date,
+           dateFormatted: format(payment.date, 'd MMM', { locale: arSA }), // Arabic date format for X-axis label
+           cumulativeAmountUSD: cumulativeAmount,
+           // Include payment details for potential tooltip enhancement
+           paymentAmountUSD: payment.amountUSD,
+           clientName: payment.clientName,
+           originalAmount: payment.originalAmount,
+           originalCurrency: payment.originalCurrency,
+       };
+   });
 
-    return chartEntries.length > 0 ? chartEntries : []; // Return empty array if no payments
+    // Add a starting point at the beginning of the month with 0 income
+    const startPoint: CumulativeChartData = {
+        date: startOfMonthDate,
+        dateFormatted: format(startOfMonthDate, 'd MMM', { locale: arSA }),
+        cumulativeAmountUSD: 0,
+        paymentAmountUSD: 0, // No payment for the start point
+        clientName: '',
+        originalAmount: 0,
+        originalCurrency: 'USD', // Placeholder
+    };
+
+    // Combine start point with cumulative data
+    const finalChartData = [startPoint, ...cumulativeDataPoints];
+
+
+   // Ensure data points for the end of the month if the last payment isn't on the last day
+   if (cumulativeDataPoints.length > 0) {
+       const lastDataPoint = cumulativeDataPoints[cumulativeDataPoints.length - 1];
+       if (lastDataPoint.date.getTime() < endOfMonthDate.getTime()) {
+           finalChartData.push({
+               ...lastDataPoint, // Carry over the last cumulative amount
+               date: endOfMonthDate,
+               dateFormatted: format(endOfMonthDate, 'd MMM', { locale: arSA }),
+               // Mark this as a projected point or handle in tooltip
+                paymentAmountUSD: 0, // No new payment
+                clientName: '', // No specific client
+           });
+       }
+   } else if (finalChartData.length === 1) { // Only the start point exists
+        finalChartData.push({
+           ...startPoint, // Carry over 0 amount
+           date: endOfMonthDate,
+           dateFormatted: format(endOfMonthDate, 'd MMM', { locale: arSA }),
+        });
+   }
+
+
+   return finalChartData;
 
  }, [payments, clients, isMounted, exchangeRates, rateLoading, convertToUSD]);
 
@@ -1573,17 +1591,17 @@ const ClientTracker: FC = () => {
       </Card>
 
 
-       {/* Payment Chart Card (Individual Payments USD for current month) */}
+       {/* Cumulative Income Chart Card (Area chart showing total income in USD for current month) */}
         <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
            <CardHeader className="bg-muted/50">
-             <CardTitle className="text-xl text-foreground">الدفعات الفردية الشهرية (بالدولار الأمريكي - تقديري)</CardTitle>
+             <CardTitle className="text-xl text-foreground">الدخل الشهري التراكمي (بالدولار الأمريكي - تقديري)</CardTitle>
              <AlertDescription className="text-muted-foreground mt-2">
-                ملاحظة: يمثل الرسم البياني كل دفعة فردية مقدرة بالدولار الأمريكي لهذا الشهر. مرر فوق النقاط لرؤية التفاصيل.
+                ملاحظة: يمثل الرسم البياني إجمالي الدخل المقدر بالدولار الأمريكي المتراكم خلال هذا الشهر.
              </AlertDescription>
            </CardHeader>
            <CardContent className="p-4 md:p-6">
-             {chartData && chartData.length > 0 ? (
-               <ClientPaymentChart data={chartData} />
+             {cumulativeChartData && cumulativeChartData.length > 1 ? ( // Need at least start and one data point
+               <ClientPaymentChart data={cumulativeChartData} />
              ) : rateLoading ? (
                  <div className="flex items-center justify-center h-[300px]">
                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -1615,17 +1633,17 @@ const ClientTracker: FC = () => {
           <Table>
             <TableCaption className="mt-4 mb-2 text-muted-foreground">قائمة بعملائك ومشاريعهم وحالات الدفع.</TableCaption>
             <TableHeader>
-              <TableRow>
-                <SortableClientHeader columnKey="name" title="اسم العميل" />
-                <SortableClientHeader columnKey="project" title="المشروع" />
-                <SortableClientHeader columnKey="totalProjectCost" title="التكلفة الإجمالية" />
-                 <TableHead>العملة</TableHead>
-                <SortableClientHeader columnKey="derivedStatus" title="حالة الدفع" />
-                <SortableClientHeader columnKey="derivedAmountPaid" title="المدفوع" />
-                <SortableClientHeader columnKey="derivedRemainingAmount" title="المتبقي" />
-                <TableHead>المتبقي (دولار)</TableHead>
-                <SortableClientHeader columnKey="derivedPaymentDate" title="تاريخ آخر دفعة" />
-                <TableHead className="text-left">الإجراءات</TableHead>{/* Adjusted alignment for RTL */}
+              <TableRow>{/* Ensure no whitespace */}
+                <SortableClientHeader columnKey="name" title="اسم العميل" />{/* Ensure no whitespace */}
+                <SortableClientHeader columnKey="project" title="المشروع" />{/* Ensure no whitespace */}
+                <SortableClientHeader columnKey="totalProjectCost" title="التكلفة الإجمالية" />{/* Ensure no whitespace */}
+                 <TableHead>العملة</TableHead>{/* Ensure no whitespace */}
+                <SortableClientHeader columnKey="derivedStatus" title="حالة الدفع" />{/* Ensure no whitespace */}
+                <SortableClientHeader columnKey="derivedAmountPaid" title="المدفوع" />{/* Ensure no whitespace */}
+                <SortableClientHeader columnKey="derivedRemainingAmount" title="المتبقي" />{/* Ensure no whitespace */}
+                <TableHead>المتبقي (دولار)</TableHead>{/* Ensure no whitespace */}
+                <SortableClientHeader columnKey="derivedPaymentDate" title="تاريخ آخر دفعة" />{/* Ensure no whitespace */}
+                <TableHead className="text-left">الإجراءات</TableHead>{/* Ensure no whitespace */}
               </TableRow>
             </TableHeader>
             <TableBody>{/* Ensure no whitespace */}
@@ -1638,11 +1656,11 @@ const ClientTracker: FC = () => {
 
                     return (
                       <React.Fragment key={client.id}> {/* Use Fragment to wrap row and potential form */}
-                      <TableRow className="hover:bg-muted/30 transition-colors duration-150">
-                        <TableCell className="font-medium text-foreground">{client.name}</TableCell>
-                        <TableCell className="text-muted-foreground">{client.project}</TableCell>
-                        <TableCell className="font-semibold">{formatCurrency(client.totalProjectCost, client.currency)}</TableCell>
-                        <TableCell className="text-muted-foreground">{CURRENCIES[client.currency]}</TableCell>
+                      <TableRow className="hover:bg-muted/30 transition-colors duration-150">{/* Ensure no whitespace */}
+                        <TableCell className="font-medium text-foreground">{client.name}</TableCell>{/* Ensure no whitespace */}
+                        <TableCell className="text-muted-foreground">{client.project}</TableCell>{/* Ensure no whitespace */}
+                        <TableCell className="font-semibold">{formatCurrency(client.totalProjectCost, client.currency)}</TableCell>{/* Ensure no whitespace */}
+                        <TableCell className="text-muted-foreground">{CURRENCIES[client.currency]}</TableCell>{/* Ensure no whitespace */}
                         <TableCell>
                              <Select
                                 value={paymentStatus} // Use derived status
@@ -1662,18 +1680,18 @@ const ClientTracker: FC = () => {
                                 ))}
                                 </SelectContent>
                             </Select>
-                        </TableCell>
-                         <TableCell className="font-semibold text-green-700 dark:text-green-400">{formatCurrency(amountPaid, client.currency)}</TableCell>
-                         <TableCell className="font-semibold text-red-700 dark:text-red-400">{formatCurrency(remainingAmount, client.currency)}</TableCell>
+                        </TableCell>{/* Ensure no whitespace */}
+                         <TableCell className="font-semibold text-green-700 dark:text-green-400">{formatCurrency(amountPaid, client.currency)}</TableCell>{/* Ensure no whitespace */}
+                         <TableCell className="font-semibold text-red-700 dark:text-red-400">{formatCurrency(remainingAmount, client.currency)}</TableCell>{/* Ensure no whitespace */}
                          <TableCell className="font-semibold text-blue-700 dark:text-blue-400">
                             {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
                              remainingAmountUSD !== null ? formatCurrency(remainingAmountUSD, 'USD') :
                              rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
-                         </TableCell>
-                        <TableCell className="text-muted-foreground">{formatDateAr(latestPaymentDate)}</TableCell> {/* Use Arabic date format */}
-                        <TableCell className="text-left space-x-1"> {/* Adjusted alignment for RTL & Added spacing */}
-                           {/* Add/Edit Payment Button - Show if not fully paid */}
-                           {paymentStatus !== 'paid' && (
+                         </TableCell>{/* Ensure no whitespace */}
+                        <TableCell className="text-muted-foreground">{formatDateAr(latestPaymentDate)}</TableCell>{/* Ensure no whitespace */}
+                        <TableCell className="text-left space-x-1">{/* Ensure no whitespace */}
+                           {/* Add/Edit Payment Button - Show if not fully paid or if adding form is open */}
+                           {(paymentStatus !== 'paid' || isAddingPayment) && (
                              <Button
                                variant="outline"
                                size="sm"
@@ -1683,10 +1701,13 @@ const ClientTracker: FC = () => {
                                   // Reset/Pre-fill form when opening
                                   if (newClientId) {
                                       paymentForm.reset({
-                                          // Pre-fill with 0 or existing partial payment logic if needed
-                                          paymentAmount: 0,
+                                          paymentAmount: 0, // Reset to 0 for new addition
                                           paymentDate: new Date(),
                                       });
+                                      // If status is 'not_paid', keep it open; otherwise, close if clicking 'Cancel'
+                                  } else if (paymentStatus === 'not_paid') {
+                                       // If closing and status is 'not_paid', optionally keep it open or handle as needed
+                                       // Current behavior: closes the form.
                                   }
                                }}
                                className={cn(
@@ -1847,20 +1868,20 @@ const ClientTracker: FC = () => {
               <Table>
                   <TableCaption className="mt-4 mb-2 text-muted-foreground">قائمة بالديون المستحقة والمدفوعة.</TableCaption>
                   <TableHeader>
-                      <TableRow>
-                          <SortableDebtHeader columnKey="description" title="وصف الدين" />
-                          <SortableDebtHeader columnKey="debtorName" title="المدين" />
-                          <SortableDebtHeader columnKey="creditorName" title="الدائن" />
-                          <SortableDebtHeader columnKey="amount" title="المبلغ الإجمالي" />
-                          <TableHead>العملة</TableHead>
-                          <SortableDebtHeader columnKey="status" title="حالة السداد" />
-                          <SortableDebtHeader columnKey="amountRepaid" title="المسدد" />
-                          <SortableDebtHeader columnKey="remainingDebt" title="المتبقي" />
-                          <TableHead>المتبقي (دولار)</TableHead>
-                          <SortableDebtHeader columnKey="dueDate" title="تاريخ الاستحقاق" />
-                          <SortableDebtHeader columnKey="paidDate" title="آخر سداد" /> {/* Changed label */}
-                          <TableHead>ملاحظات</TableHead>
-                          <TableHead className="text-left">الإجراءات</TableHead>
+                      <TableRow>{/* Ensure no whitespace */}
+                          <SortableDebtHeader columnKey="description" title="وصف الدين" />{/* Ensure no whitespace */}
+                          <SortableDebtHeader columnKey="debtorName" title="المدين" />{/* Ensure no whitespace */}
+                          <SortableDebtHeader columnKey="creditorName" title="الدائن" />{/* Ensure no whitespace */}
+                          <SortableDebtHeader columnKey="amount" title="المبلغ الإجمالي" />{/* Ensure no whitespace */}
+                          <TableHead>العملة</TableHead>{/* Ensure no whitespace */}
+                          <SortableDebtHeader columnKey="status" title="حالة السداد" />{/* Ensure no whitespace */}
+                          <SortableDebtHeader columnKey="amountRepaid" title="المسدد" />{/* Ensure no whitespace */}
+                          <SortableDebtHeader columnKey="remainingDebt" title="المتبقي" />{/* Ensure no whitespace */}
+                          <TableHead>المتبقي (دولار)</TableHead>{/* Ensure no whitespace */}
+                          <SortableDebtHeader columnKey="dueDate" title="تاريخ الاستحقاق" />{/* Ensure no whitespace */}
+                          <SortableDebtHeader columnKey="paidDate" title="آخر سداد" />{/* Ensure no whitespace */}
+                          <TableHead>ملاحظات</TableHead>{/* Ensure no whitespace */}
+                          <TableHead className="text-left">الإجراءات</TableHead>{/* Ensure no whitespace */}
                       </TableRow>
                   </TableHeader>
                   <TableBody>{/* Ensure no whitespace */}
@@ -1873,12 +1894,12 @@ const ClientTracker: FC = () => {
 
                               return (
                                  <React.Fragment key={debt.id}>
-                                  <TableRow className="hover:bg-muted/30 transition-colors duration-150">
-                                      <TableCell className="font-medium text-foreground">{debt.description}</TableCell>
-                                      <TableCell className="text-muted-foreground">{debt.debtorName}</TableCell>
-                                      <TableCell className="text-muted-foreground">{debt.creditorName}</TableCell>
-                                      <TableCell className="font-semibold">{formatCurrency(debt.amount, debt.currency)}</TableCell>
-                                      <TableCell className="text-muted-foreground">{CURRENCIES[debt.currency]}</TableCell>
+                                  <TableRow className="hover:bg-muted/30 transition-colors duration-150">{/* Ensure no whitespace */}
+                                      <TableCell className="font-medium text-foreground">{debt.description}</TableCell>{/* Ensure no whitespace */}
+                                      <TableCell className="text-muted-foreground">{debt.debtorName}</TableCell>{/* Ensure no whitespace */}
+                                      <TableCell className="text-muted-foreground">{debt.creditorName}</TableCell>{/* Ensure no whitespace */}
+                                      <TableCell className="font-semibold">{formatCurrency(debt.amount, debt.currency)}</TableCell>{/* Ensure no whitespace */}
+                                      <TableCell className="text-muted-foreground">{CURRENCIES[debt.currency]}</TableCell>{/* Ensure no whitespace */}
                                       <TableCell>
                                           <Select
                                               value={debt.status} // Use current status
@@ -1898,20 +1919,20 @@ const ClientTracker: FC = () => {
                                                   ))}
                                               </SelectContent>
                                           </Select>
-                                      </TableCell>
-                                      <TableCell className="font-semibold text-green-700 dark:text-green-400">{formatCurrency(amountRepaid, debt.currency)}</TableCell>
-                                      <TableCell className="font-semibold text-red-700 dark:text-red-400">{formatCurrency(remainingDebt, debt.currency)}</TableCell>
+                                      </TableCell>{/* Ensure no whitespace */}
+                                      <TableCell className="font-semibold text-green-700 dark:text-green-400">{formatCurrency(amountRepaid, debt.currency)}</TableCell>{/* Ensure no whitespace */}
+                                      <TableCell className="font-semibold text-red-700 dark:text-red-400">{formatCurrency(remainingDebt, debt.currency)}</TableCell>{/* Ensure no whitespace */}
                                       <TableCell className="font-semibold text-blue-700 dark:text-blue-400">
                                          {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
                                           remainingDebtUSD !== null ? formatCurrency(remainingDebtUSD, 'USD') :
                                           rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
-                                      </TableCell>
-                                      <TableCell className="text-muted-foreground">{formatDateAr(debt.dueDate)}</TableCell> {/* Arabic date format */}
-                                      <TableCell className="text-muted-foreground">{formatDateAr(debt.paidDate)}</TableCell> {/* Arabic date format */}
-                                      <TableCell className="text-muted-foreground max-w-[150px] truncate" title={debt.notes || ''}>{debt.notes || '-'}</TableCell>
-                                      <TableCell className="text-left space-x-1">
-                                          {/* Edit Repayment Button - Show if not fully paid */}
-                                           {debt.status !== 'paid' && (
+                                      </TableCell>{/* Ensure no whitespace */}
+                                      <TableCell className="text-muted-foreground">{formatDateAr(debt.dueDate)}</TableCell>{/* Ensure no whitespace */}
+                                      <TableCell className="text-muted-foreground">{formatDateAr(debt.paidDate)}</TableCell>{/* Ensure no whitespace */}
+                                      <TableCell className="text-muted-foreground max-w-[150px] truncate" title={debt.notes || ''}>{debt.notes || '-'}</TableCell>{/* Ensure no whitespace */}
+                                      <TableCell className="text-left space-x-1">{/* Ensure no whitespace */}
+                                          {/* Edit Repayment Button - Show if not fully paid or if form is open */}
+                                           {(debt.status !== 'paid' || isEditingRepayment) && (
                                             <Button
                                                 variant="outline"
                                                 size="sm"
@@ -1924,6 +1945,8 @@ const ClientTracker: FC = () => {
                                                             amountRepaid: debt.amountRepaid ?? 0,
                                                             paidDate: debt.paidDate || new Date(), // Default to now if no previous date
                                                         });
+                                                    } else if (debt.status === 'outstanding') {
+                                                         // If closing and status is 'outstanding', ensure it stays closed.
                                                     }
                                                 }}
                                                 className={cn(
