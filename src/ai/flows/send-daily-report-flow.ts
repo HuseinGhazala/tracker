@@ -4,38 +4,29 @@
  * @fileOverview Defines a Genkit flow to generate and send a daily financial report.
  *
  * - sendDailyReport - Triggers the report generation and emailing process.
- * - DailyReportInput - Input schema for the flow (currently empty, might include date range later).
- * - DailyReportOutput - Output schema indicating success or failure.
  */
 
 import { ai } from '@/ai/ai-instance';
 import { z } from 'genkit';
 import { sendEmail } from '@/services/email-service'; // Placeholder email service
 import { generatePdfReport } from '@/services/pdf-service'; // Placeholder PDF service
+import type { DailyReportInput, DailyReportOutput } from './schemas/daily-report-schemas'; // Import types
+import { DailyReportInputSchema, DailyReportOutputSchema } from './schemas/daily-report-schemas'; // Import schemas
 
-// Currently no specific input needed, but schema is defined for future expansion
-export const DailyReportInputSchema = z.object({});
-export type DailyReportInput = z.infer<typeof DailyReportInputSchema>;
-
-export const DailyReportOutputSchema = z.object({
-  success: z.boolean(),
-  message: z.string(),
-});
-export type DailyReportOutput = z.infer<typeof DailyReportOutputSchema>;
 
 // This function will be called (e.g., by a scheduled job or manually)
 export async function sendDailyReport(input: DailyReportInput): Promise<DailyReportOutput> {
     // In a real scenario, you might fetch the actual client/debt data here
     // For now, we'll pass placeholder data to the flow
     const placeholderData = {
-        clients: [{ id: '1', name: 'Placeholder Client' }], // Replace with actual client data fetching
-        debts: [{ id: '1', description: 'Placeholder Debt' }], // Replace with actual debt data fetching
+        clients: input.clients ?? [], // Use passed clients or default to empty array
+        debts: input.debts ?? [],     // Use passed debts or default to empty array
         summary: {
-            totalPaidUSD: 1000, // Replace with actual calculation
-            totalRemainingUSD: 500, // Replace with actual calculation
-            totalOutstandingDebtUSD: 200, // Replace with actual calculation
+            totalPaidUSD: input.summary?.totalPaidUSD ?? null,
+            totalRemainingUSD: input.summary?.totalRemainingUSD ?? null,
+            totalOutstandingDebtUSD: input.summary?.totalOutstandingDebtUSD ?? null,
         },
-        reportDate: new Date(),
+        reportDate: input.reportDate ?? new Date(),
     };
 
     try {
@@ -53,6 +44,7 @@ const dailyReportFlow = ai.defineFlow(
   {
     name: 'dailyReportFlow',
     // Input schema receives the data needed for the report
+    // Use the imported schema
     inputSchema: z.object({
         clients: z.array(z.any()).describe("List of client data."), // Use specific client schema if available
         debts: z.array(z.any()).describe("List of debt data."),     // Use specific debt schema if available
@@ -63,6 +55,7 @@ const dailyReportFlow = ai.defineFlow(
         }).describe("Summary financial data."),
         reportDate: z.date().describe("The date the report is generated for."),
     }),
+    // Use the imported schema
     outputSchema: DailyReportOutputSchema,
   },
   async (reportData) => {
@@ -128,11 +121,13 @@ const dailyReportFlow = ai.defineFlow(
 
 // Note: This flow needs to be triggered.
 // In a real application, you might set up a scheduled task (e.g., using Cloud Scheduler or cron)
-// that calls the `sendDailyReport({})` function once a day.
+// that calls the `sendDailyReport(...)` function once a day.
 // Or, provide a button in the UI to trigger it manually.
 
 // Example of manual trigger (could be placed in a component or API route):
 // async function handleManualTrigger() {
-//   const result = await sendDailyReport({});
+//   // Prepare the input data for the report
+//   const inputData = { /* fetch or construct clients, debts, summary, reportDate */ };
+//   const result = await sendDailyReport(inputData);
 //   console.log('Manual report trigger result:', result);
 // }
