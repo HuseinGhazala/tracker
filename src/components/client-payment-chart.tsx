@@ -8,12 +8,11 @@ import {
   ChartContainer,
   ChartTooltipContent,
 } from "@/components/ui/chart"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import type { ChartConfig } from "@/components/ui/chart"
 
 export type ChartData = {
   month: string;
-  total: number;
+  total: number; // Now represents total in USD
 }
 
 interface ClientPaymentChartProps {
@@ -22,15 +21,19 @@ interface ClientPaymentChartProps {
 
 const chartConfig = {
   total: {
-    label: "الدخل",
+    label: "الدخل (USD)", // Label updated to USD
     color: "hsl(var(--chart-1))",
   },
 } satisfies ChartConfig
 
 export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
-  // Format currency for tooltip and axis
-  const formatCurrency = (value: number) => {
-    return value.toLocaleString('ar-SA', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }); // Keep USD, adjust as needed
+  // Format currency for tooltip and axis (always USD now)
+  const formatCurrencyUSD = (value: number) => {
+     try {
+       return value.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 });
+     } catch (e) {
+       return `USD ${value.toFixed(0)}`; // Fallback
+     }
   }
 
   return (
@@ -45,7 +48,7 @@ export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
           tickFormatter={(value) => value} // Display full month name from data
         />
          <YAxis
-            tickFormatter={formatCurrency}
+            tickFormatter={formatCurrencyUSD} // Use USD formatter
             tickLine={false}
             axisLine={false}
             tickMargin={10}
@@ -53,10 +56,12 @@ export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
           />
         <Tooltip
           cursor={false}
-          content={<ChartTooltipContent formatter={formatCurrency} hideLabel />} // Use custom formatter
+          content={<ChartTooltipContent formatter={formatCurrencyUSD} hideLabel />} // Use USD formatter
         />
         <Bar dataKey="total" fill="var(--color-total)" radius={4} />
       </BarChart>
     </ChartContainer>
   )
 }
+
+    
