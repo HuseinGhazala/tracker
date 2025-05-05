@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import * as React from 'react';
@@ -199,6 +200,11 @@ const ClientTracker: FC = () => {
         // Basic validation after parsing (optional but recommended)
         const validatedClients = parsedClients.filter((client: any) => {
             try {
+                // Check if paymentDate is valid before parsing
+                if (client.paymentDate && isNaN(new Date(client.paymentDate).getTime())) {
+                     console.warn("Invalid paymentDate found in storage for client:", client.id);
+                     client.paymentDate = undefined; // Set to undefined if invalid
+                }
                 clientSchema.parse(client);
                 return true;
             } catch (e) {
@@ -290,6 +296,73 @@ const ClientTracker: FC = () => {
       description: `تمت إزالة سجل العميل.`,
       variant: 'destructive',
     });
+  };
+
+  const updateClientStatus = (clientId: string, newStatus: PaymentStatus) => {
+    setClients(prevClients =>
+      prevClients.map(client => {
+        if (client.id === clientId) {
+          let updatedClient = { ...client, paymentStatus: newStatus };
+
+          // Adjust fields based on new status
+          if (newStatus === 'not_paid') {
+            updatedClient.amountPaidSoFar = 0;
+            updatedClient.paymentDate = undefined;
+          } else if (newStatus === 'paid') {
+            updatedClient.amountPaidSoFar = client.totalProjectCost;
+            // If payment date wasn't set before, set it to today (or prompt user)
+            if (!updatedClient.paymentDate) {
+                updatedClient.paymentDate = new Date();
+                toast({
+                    title: 'تنبيه',
+                    description: `تم تحديث حالة الدفع لـ "${client.name}" إلى "تم الدفع". تم تعيين تاريخ الدفع إلى اليوم. يمكنك تعديله لاحقًا إذا لزم الأمر.`,
+                    variant: 'default',
+                });
+            }
+          } else { // partially_paid
+             // If switching to partially paid, ensure amountPaidSoFar and paymentDate exist.
+             // If amountPaidSoFar was 0 or undefined (from not_paid), prompt user or set default?
+             // Let's assume user will need to fill these via other means for now, or keep existing values if switching from 'paid'
+             if (updatedClient.amountPaidSoFar === undefined || updatedClient.amountPaidSoFar === null || (client.paymentStatus === 'not_paid' && updatedClient.amountPaidSoFar === 0)) {
+                  // Keep it undefined for now, schema validation will catch it if needed upon further edits, or prompt user
+                  updatedClient.amountPaidSoFar = undefined; // Or a sensible default/prompt
+                  toast({
+                     title: 'تنبيه',
+                     description: `تم تحديث حالة الدفع لـ "${client.name}" إلى "دفع جزئي". يرجى تحديث المبلغ المدفوع وتاريخ الدفعة.`,
+                     variant: 'default', // Use default or warning variant
+                  });
+             }
+             if (!updatedClient.paymentDate) {
+                 updatedClient.paymentDate = new Date(); // Default to today or prompt
+                  toast({
+                      title: 'تنبيه',
+                      description: `تم تعيين تاريخ الدفع لـ "${client.name}" إلى اليوم تلقائيًا لحالة "دفع جزئي". يمكنك تعديله.`,
+                      variant: 'default',
+                  });
+             }
+          }
+
+          // Validate the updated client data (optional but good practice)
+          try {
+            clientSchema.parse(updatedClient);
+            toast({
+                title: 'تم تحديث الحالة',
+                description: `تم تغيير حالة دفع "${client.name}" إلى "${PAYMENT_STATUSES[newStatus]}".`,
+            });
+            return updatedClient;
+          } catch (error: any) {
+            console.error("Validation failed after status update:", error);
+             toast({
+                 title: 'خطأ في التحديث',
+                 description: `فشل تحديث حالة الدفع لـ "${client.name}". ${error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
+                 variant: 'destructive',
+             });
+            return client; // Revert if validation fails
+          }
+        }
+        return client;
+      })
+    );
   };
 
    // Convert any currency to USD
@@ -474,7 +547,11 @@ const ClientTracker: FC = () => {
         // Ensure date parsing is robust
         const [year, month] = monthYear.split('-').map(Number);
         const date = new Date(year, month - 1, 1); // Month is 0-indexed
-        const monthName = format(date, 'MMMM yyyy', { locale: arSA });
+
+        // Validate date before formatting
+        const isValidDate = !isNaN(date.getTime());
+        const monthName = isValidDate ? format(date, 'MMMM yyyy', { locale: arSA }) : `بيانات غير صالحة (${monthYear})`;
+
         return { month: monthName, total }; // Total is now in USD
       });
 
@@ -677,7 +754,7 @@ const ClientTracker: FC = () => {
                                             !field.value && 'text-muted-foreground'
                                         )}
                                         >
-                                        {field.value ? (
+                                        {field.value && !isNaN(field.value.getTime()) ? ( // Check if date is valid
                                             format(field.value, 'PPP', { locale: arSA }) // Use Arabic locale
                                         ) : (
                                             <span>اختر تاريخًا</span>
@@ -690,7 +767,7 @@ const ClientTracker: FC = () => {
                                     <Calendar
                                         mode="single"
                                         selected={field.value}
-                                        onSelect={field.onChange}
+                                        onSelect={(date) => field.onChange(date)} // Pass selected date directly
                                         disabled={(date) =>
                                         date > new Date() || date < new Date('1900-01-01')
                                         }
@@ -775,14 +852,24 @@ const ClientTracker: FC = () => {
                         <TableCell>{formatCurrency(client.totalProjectCost, client.currency)}</TableCell>
                         <TableCell>{CURRENCIES[client.currency]}</TableCell>
                         <TableCell>
-                             <span className={cn(
-                                 "px-2 py-1 rounded-full text-xs font-medium",
-                                 client.paymentStatus === 'paid' && 'bg-green-100 text-green-800',
-                                 client.paymentStatus === 'partially_paid' && 'bg-yellow-100 text-yellow-800',
-                                 client.paymentStatus === 'not_paid' && 'bg-red-100 text-red-800'
-                             )}>
-                                {PAYMENT_STATUSES[client.paymentStatus]}
-                             </span>
+                             <Select
+                                defaultValue={client.paymentStatus}
+                                onValueChange={(newStatus) => client.id && updateClientStatus(client.id, newStatus as PaymentStatus)}
+                             >
+                                <SelectTrigger className={cn(
+                                    "w-[120px] text-xs border-0 focus:ring-0 focus:ring-offset-0", // Basic styling, adjust as needed
+                                     client.paymentStatus === 'paid' && 'text-green-800 bg-green-100',
+                                     client.paymentStatus === 'partially_paid' && 'text-yellow-800 bg-yellow-100',
+                                     client.paymentStatus === 'not_paid' && 'text-red-800 bg-red-100'
+                                 )}>
+                                <SelectValue placeholder="تغيير الحالة" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                {Object.entries(PAYMENT_STATUSES).map(([key, value]) => (
+                                    <SelectItem key={key} value={key} className="text-xs">{value}</SelectItem>
+                                ))}
+                                </SelectContent>
+                            </Select>
                         </TableCell>
                          <TableCell>{formatCurrency(amountPaid, client.currency)}</TableCell>
                          <TableCell>{formatCurrency(remainingAmount, client.currency)}</TableCell>
@@ -791,7 +878,7 @@ const ClientTracker: FC = () => {
                              remainingAmountUSD !== null ? formatCurrency(remainingAmountUSD, 'USD') :
                              rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}
                          </TableCell>
-                        <TableCell>{client.paymentDate ? format(client.paymentDate, 'PPP', { locale: arSA }) : '-'}</TableCell> {/* Use Arabic locale */}
+                        <TableCell>{client.paymentDate && !isNaN(client.paymentDate.getTime()) ? format(client.paymentDate, 'PPP', { locale: arSA }) : '-'}</TableCell> {/* Use Arabic locale & check validity */}
                         <TableCell className="text-left"> {/* Adjusted alignment for RTL */}
                           <Button variant="ghost" size="icon" onClick={() => client.id && deleteClient(client.id)} className="text-destructive hover:text-destructive/80">
                             <Trash2 className="h-4 w-4" />
@@ -799,7 +886,7 @@ const ClientTracker: FC = () => {
                           </Button>
                         </TableCell>
                       </TableRow>
-                    )
+                    );
                 })
               ) : (
                 <TableRow>
@@ -837,5 +924,4 @@ const ClientTracker: FC = () => {
 };
 
 export default ClientTracker;
-
     
