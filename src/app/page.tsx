@@ -741,7 +741,7 @@ const ClientTracker: FC = () => {
                 return newDebts;
             });
 
-            // Show toast using useEffect
+            // Show confirmation toast using useEffect
              showToast({
                 title: 'تم تحديث السداد',
                 description: `تم تحديث المبلغ المسدد للدين على ${originalDebt.debtorName}. الحالة الآن ${DEBT_STATUSES[newStatus]}.`,
@@ -763,7 +763,11 @@ const ClientTracker: FC = () => {
       description: `تمت إزالة سجل العميل وجميع دفعاته.`,
       variant: 'destructive',
     });
-  }, [showToast]); // Added toast
+    // Close payment form if the deleted client was being edited
+     if (addingPaymentForClientId === idToDelete) {
+         setAddingPaymentForClientId(null);
+     }
+  }, [showToast, addingPaymentForClientId]); // Added toast and dependency
 
    const deletePayment = useCallback((paymentIdToDelete: string) => {
      const paymentToDelete = payments.find(p => p.id === paymentIdToDelete);
@@ -807,86 +811,72 @@ const ClientTracker: FC = () => {
 
         if (newStatusTarget === currentStatus) return; // No change needed
 
-        // --- Logic based on the *target* status ---
+        let openPaymentForm = false;
+        let toastTitle = '';
+        let toastDescription = '';
+        let toastVariant: 'default' | 'destructive' = 'default';
 
         if (newStatusTarget === 'paid') {
-            // If trying to mark as paid but not fully paid
             if (totalPaid < client.totalProjectCost) {
-                // Show toast using useEffect
-                 showToast({
-                    title: 'لا يمكن التحديث إلى "تم الدفع"',
-                    description: `العميل ${client.name} لم يسدد التكلفة الإجمالية بعد. المبلغ المتبقي ${formatCurrency(client.totalProjectCost - totalPaid, client.currency)}. قم بإضافة دفعة لتغطية المبلغ المتبقي.`,
-                    variant: 'destructive',
-                });
-                // Revert visual state (needed if Select is uncontrolled within the table row)
-                setClients(prev => [...prev]); // Trigger re-render
-                return;
+                toastTitle = 'لا يمكن التحديث إلى "تم الدفع"';
+                toastDescription = `العميل ${client.name} لم يسدد التكلفة الإجمالية بعد. المبلغ المتبقي ${formatCurrency(client.totalProjectCost - totalPaid, client.currency)}. قم بإضافة دفعة لتغطية المبلغ المتبقي.`;
+                toastVariant = 'destructive';
+                // Do not change status, just show toast and maybe revert Select visual state if needed
+            } else {
+                 toastTitle = 'تم التأكيد';
+                 toastDescription = `حالة ${client.name} هي بالفعل "تم الدفع".`;
+                 // No data change needed, but might need re-render if Select is uncontrolled
             }
-             // If already fully paid, just confirm
-             // Show toast using useEffect
-              showToast({
-                 title: 'تم التأكيد',
-                 description: `حالة ${client.name} هي بالفعل "تم الدفع".`,
-             });
-             setClients(prev => [...prev]); // Trigger re-render if needed
-
         } else if (newStatusTarget === 'partially_paid') {
-            // If trying to mark as partially_paid but already fully paid
             if (totalPaid >= client.totalProjectCost) {
-                 // Show toast using useEffect
-                  showToast({
-                     title: 'تنبيه',
-                     description: `العميل ${client.name} قام بالفعل بدفع التكلفة كاملة أو أكثر. الحالة هي "تم الدفع".`,
-                     variant: 'default',
-                 });
-                 setClients(prev => [...prev]); // Revert visual state
-                 return;
+                toastTitle = 'تنبيه';
+                toastDescription = `العميل ${client.name} قام بالفعل بدفع التكلفة كاملة أو أكثر. الحالة هي "تم الدفع".`;
+                // Do not change status, just show toast
+            } else {
+                openPaymentForm = true; // Open payment form when selecting 'partially_paid'
+                if (totalPaid <= 0) {
+                    toastTitle = 'إضافة دفعة أولى';
+                    toastDescription = `حالة ${client.name} الآن "دفع جزئي". الرجاء إضافة أول دفعة.`;
+                } else {
+                    toastTitle = 'تعديل الدفعة';
+                    toastDescription = `حالة ${client.name} هي "دفع جزئي". يمكنك تعديل أو إضافة دفعة جديدة.`;
+                }
+                 // No direct data change needed here, status is derived. Form opening handles the action.
             }
-
-            // Open payment form when selecting 'partially_paid'
-            setAddingPaymentForClientId(clientId);
-            paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() });
-
-            // If coming from not_paid, no payments exist yet
-            if (totalPaid <= 0) {
-                  // Show toast using useEffect
-                   showToast({
-                    title: 'إضافة دفعة أولى',
-                    description: `حالة ${client.name} الآن "دفع جزئي". الرجاء إضافة أول دفعة.`,
-                 });
-            } else { // Already partially paid, confirming or editing
-                 // Show toast using useEffect
-                 showToast({
-                    title: 'تعديل الدفعة',
-                    description: `حالة ${client.name} هي "دفع جزئي". يمكنك تعديل أو إضافة دفعة جديدة.`,
-                });
-            }
-             setClients(prev => [...prev]); // Trigger re-render for consistency
-
         } else if (newStatusTarget === 'not_paid') {
-            // If trying to mark as 'not_paid' but payments exist
             if (totalPaid > 0) {
-                 // Show toast using useEffect
-                 showToast({
-                    title: 'لا يمكن التحديث إلى "لم يتم الدفع"',
-                    description: `توجد دفعات مسجلة للعميل ${client.name}. لحذف الدفعات وتغيير الحالة، قم بحذف سجلات الدفعات الفردية أولاً.`,
-                    variant: 'destructive',
-                });
-                 setClients(prev => [...prev]); // Revert visual state
-                 return;
+                toastTitle = 'لا يمكن التحديث إلى "لم يتم الدفع"';
+                toastDescription = `توجد دفعات مسجلة للعميل ${client.name}. لحذف الدفعات وتغيير الحالة، قم بحذف سجلات الدفعات الفردية أولاً.`;
+                toastVariant = 'destructive';
+                // Do not change status, just show toast
+            } else {
+                toastTitle = 'تم التأكيد';
+                toastDescription = `حالة ${client.name} هي "لم يتم الدفع".`;
+                // No data change needed. Close payment form if it was open.
+                if (addingPaymentForClientId === clientId) {
+                   setAddingPaymentForClientId(null);
+                }
             }
-            // If no payments exist, confirm status
-             // Show toast using useEffect
-              showToast({
-                 title: 'تم التأكيد',
-                 description: `حالة ${client.name} هي "لم يتم الدفع".`,
-             });
-             setClients(prev => [...prev]); // No data change needed. Re-render ensures consistency.
-             // Close payment form if it was open for this client
-             if (addingPaymentForClientId === clientId) {
-                 setAddingPaymentForClientId(null);
-             }
         }
+
+         // Show toast using useEffect mechanism
+         showToast({ title: toastTitle, description: toastDescription, variant: toastVariant });
+
+         // Open or close the payment form *after* potential state updates from toast
+         if (openPaymentForm) {
+             setAddingPaymentForClientId(clientId);
+             paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() });
+         } else if (newStatusTarget !== 'partially_paid' && addingPaymentForClientId === clientId) {
+             // Close form if the target status is not partially_paid and the form was open
+              setAddingPaymentForClientId(null);
+         }
+
+         // Trigger re-render if the status didn't actually change data-wise but Select might need reset
+         // This ensures the Select reflects the *actual* derived status if the user tried an invalid change.
+         // The derived status calculation in useMemo will handle the correct display.
+         setClients(prev => [...prev]);
+
+
    }, [clients, payments, showToast, paymentForm, addingPaymentForClientId]); // Added dependencies
 
 
@@ -927,23 +917,34 @@ const ClientTracker: FC = () => {
             toastMessage = `تم تحديث حالة الدين على "${originalDebt.debtorName}" إلى "سداد جزئي". يرجى تعديل المبلغ المسدد.`;
             showRepaymentForm = true; // Always open form when setting to partially_paid
 
-           // If coming from 'paid', reset amountRepaid to 0 or previous? Let's reset to 0 for clarity.
+           // Decide initial values for the form based on the previous state
+            let initialRepaid = 0;
+            let initialDate = new Date();
+
             if (originalDebt.status === 'paid') {
-                updatedDebt.amountRepaid = 0; // Start fresh
-                 updatedDebt.paidDate = undefined; // Clear date as well
-                repaymentForm.reset({ amountRepaid: 0, paidDate: new Date() });
+                // Coming from 'paid', maybe start fresh or keep full amount? Starting fresh for clarity.
+                initialRepaid = 0;
+                 initialDate = new Date(); // Reset date too
+                 updatedDebt.amountRepaid = 0; // Update the debt record itself
+                 updatedDebt.paidDate = undefined;
             } else { // Coming from 'outstanding'
-                 updatedDebt.amountRepaid = originalDebt.amountRepaid ?? 0; // Keep current (likely 0)
-                 // Pre-fill form with 0 amount and today's date if amountRepaid is 0
-                repaymentForm.reset({
-                    amountRepaid: updatedDebt.amountRepaid, // Use current repaid amount
-                    paidDate: updatedDebt.paidDate || new Date(), // Use existing date or today
-                });
+                 initialRepaid = originalDebt.amountRepaid ?? 0; // Keep current (likely 0)
+                 initialDate = originalDebt.paidDate || new Date(); // Use existing date or today
+                 updatedDebt.amountRepaid = initialRepaid; // Ensure debt record reflects this
+                 // Ensure date is cleared if amountRepaid is 0
+                 if (updatedDebt.amountRepaid <= 0) {
+                    updatedDebt.paidDate = undefined;
+                    initialDate = new Date(); // Reset form date if repaid is 0
+                 } else {
+                     updatedDebt.paidDate = initialDate; // Keep date if > 0
+                 }
             }
-           // Ensure date is cleared if amountRepaid becomes 0
-          if (updatedDebt.amountRepaid <= 0) {
-              updatedDebt.paidDate = undefined;
-          }
+
+             // Pre-fill the repayment form
+            repaymentForm.reset({
+                amountRepaid: initialRepaid,
+                paidDate: initialDate,
+            });
       }
 
       // Validate before updating state
@@ -978,6 +979,9 @@ const ClientTracker: FC = () => {
         if (showRepaymentForm) {
             setEditingRepaymentForDebtId(debtId);
             // Ensure form is pre-filled correctly (already handled by repaymentForm.reset above)
+        } else if (editingRepaymentForDebtId === debtId) {
+            // Close the form if it shouldn't be shown (e.g., moving to paid/outstanding)
+             setEditingRepaymentForDebtId(null);
         }
   }, [debts, showToast, repaymentForm, editingRepaymentForDebtId]); // Added dependencies
 
@@ -1280,15 +1284,20 @@ const ClientTracker: FC = () => {
 
       try {
           // Prepare data needed for the report (similar to what the flow expects)
+          // Ensure Date objects are converted to strings for the flow input
           const reportInputData = {
                clients: clients.map(c => ({ ...c })), // Pass copies of client data
-               debts: debts.map(d => ({ ...d })), // Pass copies of debt data
+               debts: debts.map(d => ({
+                   ...d,
+                   dueDate: d.dueDate.toISOString(), // Convert Date to ISO string
+                   paidDate: d.paidDate?.toISOString(), // Convert optional Date to ISO string
+                })),
                summary: {
                    totalPaidUSD: totalPaidUSD,
                    totalRemainingUSD: totalRemainingUSD,
                    totalOutstandingDebtUSD: totalOutstandingDebtUSD,
                },
-               reportDate: new Date(),
+               reportDate: new Date().toISOString(), // Convert Date to ISO string
           };
 
           // Call the Genkit flow function directly
@@ -1582,10 +1591,6 @@ const ClientTracker: FC = () => {
                                                    paymentAmount: 0, // Reset to 0 for new addition
                                                    paymentDate: new Date(),
                                                });
-                                               // If status is 'not_paid', keep it open; otherwise, close if clicking 'Cancel'
-                                           } else if (paymentStatus === 'not_paid') {
-                                                // If closing and status is 'not_paid', optionally keep it open or handle as needed
-                                                // Current behavior: closes the form.
                                            }
                                         }}
                                         className={cn(
@@ -2063,8 +2068,6 @@ const ClientTracker: FC = () => {
                                                                       amountRepaid: debt.amountRepaid ?? 0,
                                                                       paidDate: debt.paidDate || new Date(), // Default to now if no previous date
                                                                   });
-                                                              } else if (debt.status === 'outstanding') {
-                                                                   // If closing and status is 'outstanding', ensure it stays closed.
                                                               }
                                                           }}
                                                           className={cn(

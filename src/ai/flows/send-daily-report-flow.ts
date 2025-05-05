@@ -15,23 +15,24 @@ import { DailyReportInputSchema, DailyReportOutputSchema } from './schemas/daily
 
 
 // This function will be called (e.g., by a scheduled job or manually)
+// Note: It now receives input matching DailyReportInput, including reportDate as an optional string
 export async function sendDailyReport(input: DailyReportInput): Promise<DailyReportOutput> {
-    // In a real scenario, you might fetch the actual client/debt data here
-    // For now, we'll pass placeholder data to the flow
-    const placeholderData = {
-        clients: input.clients ?? [], // Use passed clients or default to empty array
-        debts: input.debts ?? [],     // Use passed debts or default to empty array
+    // Prepare data ensuring reportDate is a string (ISO format)
+    const flowInputData: z.infer<typeof DailyReportInputSchema> = {
+        clients: input.clients ?? [],
+        debts: input.debts ?? [],
         summary: {
             totalPaidUSD: input.summary?.totalPaidUSD ?? null,
             totalRemainingUSD: input.summary?.totalRemainingUSD ?? null,
             totalOutstandingDebtUSD: input.summary?.totalOutstandingDebtUSD ?? null,
         },
-        reportDate: input.reportDate ?? new Date(),
+        // Ensure reportDate is a string (ISO format), default to now if not provided
+        reportDate: input.reportDate ?? new Date().toISOString(),
     };
 
     try {
-        // Pass necessary data to the flow
-        const result = await dailyReportFlow(placeholderData);
+        // Pass the validated string date to the flow
+        const result = await dailyReportFlow(flowInputData);
         return result;
     } catch (error: any) {
         console.error("Error executing dailyReportFlow:", error);
@@ -43,29 +44,23 @@ export async function sendDailyReport(input: DailyReportInput): Promise<DailyRep
 const dailyReportFlow = ai.defineFlow(
   {
     name: 'dailyReportFlow',
-    // Input schema receives the data needed for the report
-    // Use the imported schema
-    inputSchema: z.object({
-        clients: z.array(z.any()).describe("List of client data."), // Use specific client schema if available
-        debts: z.array(z.any()).describe("List of debt data."),     // Use specific debt schema if available
-        summary: z.object({
-            totalPaidUSD: z.number().nullable(),
-            totalRemainingUSD: z.number().nullable(),
-            totalOutstandingDebtUSD: z.number().nullable(),
-        }).describe("Summary financial data."),
-        reportDate: z.date().describe("The date the report is generated for."),
-    }),
-    // Use the imported schema
+    // Use the imported schema which now expects reportDate as string|undefined
+    inputSchema: DailyReportInputSchema,
     outputSchema: DailyReportOutputSchema,
   },
   async (reportData) => {
+    // reportData.reportDate is now a string (ISO format) or undefined
+    const reportDate = reportData.reportDate ? new Date(reportData.reportDate) : new Date(); // Parse string back to Date
+
     const recipientEmail = 'husseinghazala39@gmail.com'; // Hardcoded recipient email
-    const reportDateStr = reportData.reportDate.toLocaleDateString('ar-SA', { dateStyle: 'full' });
+    const reportDateStr = reportDate.toLocaleDateString('ar-SA', { dateStyle: 'full' });
     const subject = `تقريرك المالي اليومي - ${reportDateStr}`;
 
     try {
-      // 1. Generate PDF Report using the service
-      const pdfBuffer = await generatePdfReport(reportData);
+      // 1. Generate PDF Report using the service - Pass the Date object
+       const pdfData = { ...reportData, reportDate }; // Pass Date object to PDF service
+      const pdfBuffer = await generatePdfReport(pdfData);
+
 
       // 2. Prepare Email Content (Simple text for now)
       // You could use another Genkit prompt here to generate a summary text based on the data
@@ -92,7 +87,7 @@ const dailyReportFlow = ai.defineFlow(
         text: emailText,
         attachments: [
           {
-            filename: `financial_report_${reportData.reportDate.toISOString().split('T')[0]}.pdf`,
+            filename: `financial_report_${reportDate.toISOString().split('T')[0]}.pdf`,
             content: pdfBuffer,
             contentType: 'application/pdf',
           },
@@ -127,7 +122,12 @@ const dailyReportFlow = ai.defineFlow(
 // Example of manual trigger (could be placed in a component or API route):
 // async function handleManualTrigger() {
 //   // Prepare the input data for the report
-//   const inputData = { /* fetch or construct clients, debts, summary, reportDate */ };
+//   const inputData = {
+//     clients: [/* client data */],
+//     debts: [/* debt data */],
+//     summary: { /* summary data */ },
+//     reportDate: new Date().toISOString(), // Ensure date is ISO string
+//   };
 //   const result = await sendDailyReport(inputData);
 //   console.log('Manual report trigger result:', result);
 // }

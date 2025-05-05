@@ -15,7 +15,7 @@ export const DailyReportInputSchema = z.object({
       totalRemainingUSD: z.number().nullable(),
       totalOutstandingDebtUSD: z.number().nullable(),
   }).optional().describe("Summary financial data."), // Optional: Summary might be calculated
-  reportDate: z.date().optional().describe("The date the report is generated for."), // Optional: Defaults to now
+  reportDate: z.string().datetime().optional().describe("The date the report is generated for (ISO 8601 format)."), // Optional: Defaults to now
 });
 export type DailyReportInput = z.infer<typeof DailyReportInputSchema>;
 

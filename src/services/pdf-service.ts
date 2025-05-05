@@ -10,13 +10,13 @@
 
 interface ReportData {
   clients: any[]; // Replace 'any' with your actual Client type
-  debts: any[];   // Replace 'any' with your actual Debt type
+  debts: any[];   // Replace 'any' with your actual Debt type (ensure dates are handled correctly if they were strings)
   summary: {
     totalPaidUSD: number | null;
     totalRemainingUSD: number | null;
     totalOutstandingDebtUSD: number | null;
   };
-  reportDate: Date;
+  reportDate: Date; // Expecting a Date object here
 }
 
 /**
@@ -26,8 +26,10 @@ interface ReportData {
  */
 export async function generatePdfReport(data: ReportData): Promise<Buffer> {
   console.log(`--- Generating PDF Report (Placeholder) ---`);
+  // data.reportDate is now guaranteed to be a Date object
   console.log(`Report Date: ${data.reportDate.toISOString()}`);
   console.log(`Clients: ${data.clients.length}`);
+   // If debts originally contained string dates, they might need parsing here if the PDF lib needs Date objects
   console.log(`Debts: ${data.debts.length}`);
   console.log(`Summary:`, data.summary);
   console.log(`-----------------------------------------`);
@@ -42,6 +44,7 @@ export async function generatePdfReport(data: ReportData): Promise<Buffer> {
   //
   // const pdfDoc = await PDFDocument.create();
   // const page = pdfDoc.addPage([600, 800]);
+  // // Use the Date object directly
   // page.drawText(`Daily Financial Report - ${data.reportDate.toLocaleDateString()}`, { x: 50, y: 750, size: 18, color: rgb(0, 0.5, 0.5) });
   // // ... Add more content based on data.clients, data.debts, data.summary ...
   // const pdfBytes = await pdfDoc.save();
