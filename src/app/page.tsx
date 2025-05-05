@@ -1441,7 +1441,7 @@ const ClientTracker: FC = () => {
                 <SortableClientHeader columnKey="remainingAmount" title="المتبقي" />
                 <TableHead>المتبقي (دولار)</TableHead>
                 <SortableClientHeader columnKey="paymentDate" title="تاريخ الدفع" />
-                <TableHead className="text-left">الإجراءات</TableHead> {/* Adjusted alignment for RTL */}
+                <TableHead className="text-left">الإجراءات</TableHead>{/* Adjusted alignment for RTL */}
               </TableRow>
             </TableHeader>
             <TableBody>
