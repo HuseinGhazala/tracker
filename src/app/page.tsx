@@ -2,11 +2,11 @@
 
 import * as React from 'react'; // Ensure React is imported
 import type { FC } from 'react';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react'; // Added useCallback
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { format } from 'date-fns';
+import { format, startOfMonth as dateFnsStartOfMonth, endOfMonth as dateFnsEndOfMonth, addDays } from 'date-fns'; // Import date-fns functions
 import { arSA } from 'date-fns/locale'; // Import Arabic locale
 import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import useEmblaCarousel from 'embla-carousel-react';
@@ -388,7 +388,7 @@ const ClientTracker: FC = () => {
   };
 
    // Convert any currency to USD
-   const convertToUSD = (amount: number, fromCurrency: Currency): number | null => {
+   const convertToUSD = useCallback((amount: number, fromCurrency: Currency): number | null => {
        if (rateLoading || !exchangeRates) return null;
        const rateToUSD = exchangeRates[fromCurrency];
        if (!rateToUSD) {
@@ -396,17 +396,10 @@ const ClientTracker: FC = () => {
            return null; // Rate not available
        }
        if (fromCurrency === 'USD') return amount;
-       // Since API gives USD to OTHER, we need OTHER to USD = 1 / (USD to OTHER)
-       // But our API gives USD to OTHER. We need X to USD.
-       // Rate is USD per 1 unit of base (USD). So exchangeRates['EUR'] = 0.9 EUR per 1 USD.
-       // To convert EUR to USD: AmountEUR / RateEUR_per_USD = AmountUSD
-       const rateUSD_per_X = exchangeRates[fromCurrency];
-       if (!rateUSD_per_X) return null; // Should not happen if checked before
-
        // The API gives rates relative to USD. So data.rates.EGP is EGP per 1 USD.
        // To convert EGP to USD: amount EGP / (EGP per 1 USD) = amount USD
-       return amount / rateUSD_per_X;
-   };
+       return amount / rateToUSD;
+   }, [exchangeRates, rateLoading]); // Dependencies
 
 
   const requestSort = (key: keyof Client | 'remainingAmount') => {
@@ -518,7 +511,7 @@ const ClientTracker: FC = () => {
           const amountInUSD = convertToUSD(paidAmount, client.currency);
           return sum + (amountInUSD ?? 0);
       }, 0);
-  }, [sortedClients, isMounted, exchangeRates, rateLoading]);
+  }, [sortedClients, isMounted, exchangeRates, rateLoading, convertToUSD]); // Added convertToUSD
 
     const totalRemainingUSD = useMemo(() => {
       if (!isMounted || rateLoading || !exchangeRates) return null;
@@ -527,49 +520,77 @@ const ClientTracker: FC = () => {
           const amountInUSD = convertToUSD(remainingAmount, client.currency);
           return sum + (amountInUSD ?? 0);
       }, 0);
-    }, [sortedClients, isMounted, exchangeRates, rateLoading]);
+    }, [sortedClients, isMounted, exchangeRates, rateLoading, convertToUSD]); // Added convertToUSD
 
 
-  // Process data for the chart (in USD)
-  const chartData: ChartData[] | null = useMemo(() => {
-    if (!isMounted || rateLoading || !exchangeRates) return null; // Return null if rates not ready
+ // Process data for the chart (cumulative daily income in USD for the current month)
+ const chartData: ChartData[] | null = useMemo(() => {
+   if (!isMounted || rateLoading || !exchangeRates) return null; // Return null if rates not ready
 
-    const dailyTotalsUSD: { [key: string]: { total: number, date: Date } } = {};
+   const now = new Date();
+   const startOfMonth = dateFnsStartOfMonth(now);
+   const endOfMonth = dateFnsEndOfMonth(now);
 
-    sortedClients.forEach(client => {
-      // Consider only paid or partially paid clients with a valid payment date
-      if ((client.paymentStatus === 'paid' || client.paymentStatus === 'partially_paid') && client.paymentDate && !isNaN(client.paymentDate.getTime())) {
-            const paymentDateStr = format(client.paymentDate, 'yyyy-MM-dd'); // Group by YYYY-MM-DD
-            const paymentUSD = convertToUSD(client.amountPaidSoFar ?? 0, client.currency);
+   // Filter clients with payments within the current month
+   const paymentsInMonth = sortedClients
+     .filter(
+       (client) =>
+         (client.paymentStatus === 'paid' || client.paymentStatus === 'partially_paid') &&
+         client.paymentDate &&
+         !isNaN(client.paymentDate.getTime()) &&
+         client.paymentDate >= startOfMonth &&
+         client.paymentDate <= endOfMonth
+     )
+     .map(client => ({
+       date: client.paymentDate!, // Non-null assertion as it's checked
+       amountUSD: convertToUSD(client.amountPaidSoFar ?? 0, client.currency) ?? 0
+     }))
+     .sort((a, b) => a.date.getTime() - b.date.getTime()); // Sort payments by date
 
-            // This logic still represents the *cumulative* total paid by a client as of their last payment date, assigned to that single day.
-            // It's not a true representation of daily income unless payments are recorded individually.
-            // A more accurate approach would require tracking payment history (e.g., an array of {date, amount}).
-            // For now, we'll sum the 'amountPaidSoFar' on the 'paymentDate'.
+   // Calculate cumulative daily totals for the current month
+   const dailyCumulativeTotals: { [key: string]: { date: Date; total: number } } = {};
+   let cumulativeTotal = 0;
+   let currentDate = startOfMonth;
 
-            if (paymentUSD !== null) {
-                if (!dailyTotalsUSD[paymentDateStr]) {
-                    dailyTotalsUSD[paymentDateStr] = { total: 0, date: client.paymentDate };
-                }
-                 // Summing the *total* paid up to this date on this specific date.
-                 // This can overstate income on days where large cumulative payments are recorded.
-                 // If multiple clients have the same paymentDate, their totals will be summed for that day.
-                dailyTotalsUSD[paymentDateStr].total += paymentUSD;
-            }
-      }
-    });
+   // Pre-calculate daily payments for efficient lookup
+   const dailyPaymentsUSD: { [key: string]: number } = {};
+   paymentsInMonth.forEach(payment => {
+        // Note: This uses `amountPaidSoFar` which might not reflect the *exact* payment amount on that day
+        // if multiple partial payments were made. For a truly accurate daily income chart,
+        // you'd need to store individual payment transaction records (date + amount).
+        // This implementation sums the `amountPaidSoFar` recorded on each payment date.
+        const paymentDateStr = format(payment.date, 'yyyy-MM-dd');
+        dailyPaymentsUSD[paymentDateStr] = (dailyPaymentsUSD[paymentDateStr] || 0) + payment.amountUSD;
+   });
 
-    // Convert to chart data format and sort by date
-    return Object.entries(dailyTotalsUSD)
-      .map(([_, data]) => ({ date: data.date, total: data.total }))
-      .sort((a, b) => a.date.getTime() - b.date.getTime()) // Sort by actual Date object
-      .map(({ date, total }) => {
-        // Format the date for display using Arabic locale
-        const formattedDate = format(date, 'd MMMM yyyy', { locale: arSA });
-        return { date: formattedDate, total }; // Total is in USD
-      });
 
-  }, [sortedClients, isMounted, exchangeRates, rateLoading]);
+   // Iterate through each day of the month
+   while (currentDate <= endOfMonth) {
+     const dateStr = format(currentDate, 'yyyy-MM-dd');
+     const paymentOnDay = dailyPaymentsUSD[dateStr] || 0;
+
+     // THIS IS THE CRUCIAL CHANGE: Add only the payment amount for *this specific day*
+     // Previously, it might have been re-adding the total amountPaidSoFar.
+     // Now, it assumes dailyPaymentsUSD correctly represents the sum of payments *recorded* for that day.
+     cumulativeTotal += paymentOnDay;
+
+     dailyCumulativeTotals[dateStr] = {
+       date: new Date(currentDate), // Store the Date object
+       total: cumulativeTotal,
+     };
+
+     currentDate = addDays(currentDate, 1);
+   }
+
+
+   // Convert to chart data format
+   return Object.entries(dailyCumulativeTotals)
+     .map(([_, data]) => ({
+       date: format(data.date, 'd MMM', { locale: arSA }), // Format date as 'Day Month (abbreviated)' in Arabic
+       total: data.total, // Total is cumulative USD
+     }));
+
+ }, [sortedClients, isMounted, exchangeRates, rateLoading, convertToUSD]); // Added convertToUSD
 
 
   if (!isMounted) {
@@ -791,12 +812,16 @@ const ClientTracker: FC = () => {
         </CardContent>
       </Card>
 
-       {/* Payment Chart Card (USD) */}
+       {/* Payment Chart Card (Cumulative USD for current month) */}
        {chartData && chartData.length > 0 && (
          <Card className="mb-8 shadow-md">
            <CardHeader>
-             <CardTitle>الدخل اليومي (بالدولار الأمريكي - تقديري)</CardTitle>
-              <AlertDescription>ملاحظة: الرسم البياني يمثل الدخل بشكل تقديري بناءً على تاريخ آخر دفعة مسجلة لكل عميل والمبلغ الإجمالي المدفوع حتى ذلك التاريخ. للحصول على دقة أعلى، يجب تتبع الدفعات الفردية.</AlertDescription>
+             <CardTitle>الدخل التراكمي الشهري (بالدولار الأمريكي - تقديري)</CardTitle>
+              <AlertDescription>
+                 ملاحظة: يمثل الرسم البياني الدخل التراكمي المقدر بالدولار الأمريكي لهذا الشهر، بناءً على تواريخ الدفع المسجلة. يبدأ الرسم البياني من الصفر ويزداد مع كل دفعة مسجلة في الشهر الحالي.
+                 <br/>
+                 الدقة تعتمد على تسجيل `المبلغ المدفوع حتى الآن` في تاريخ الدفعة الصحيح. للحصول على دقة مطلقة للدخل اليومي، يجب تتبع كل دفعة بشكل منفصل.
+             </AlertDescription>
            </CardHeader>
            <CardContent className="pl-2"> {/* Adjusted padding for chart */}
              <ClientPaymentChart data={chartData} />
@@ -814,7 +839,7 @@ const ClientTracker: FC = () => {
            <Alert className="mb-8">
                <AlertCircle className="h-4 w-4" />
                <AlertTitle>لا توجد بيانات لعرضها</AlertTitle>
-               <AlertDescription>لا توجد دفعات مسجلة لعرضها في الرسم البياني.</AlertDescription>
+               <AlertDescription>لا توجد دفعات مسجلة لهذا الشهر لعرضها في الرسم البياني.</AlertDescription> {/* Updated message */}
            </Alert>
        )}
 
