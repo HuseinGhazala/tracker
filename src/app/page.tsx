@@ -2,7 +2,7 @@
 
 import * as React from 'react'; // Ensure React is imported
 import type { FC } from 'react';
-import { useState, useEffect, useMemo, useCallback } from 'react'; // Added useCallback
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'; // Added useCallback and useRef
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -79,6 +79,19 @@ const CURRENCIES = {
 } as const;
 type Currency = keyof typeof CURRENCIES;
 
+// ----- SCHEMA DEFINITIONS -----
+
+// Payment Schema (represents a single payment event)
+const paymentSchema = z.object({
+  id: z.string(), // Unique ID for the payment
+  clientId: z.string(), // ID of the client this payment belongs to
+  amount: z.coerce.number().positive({ message: 'مبلغ الدفعة يجب أن يكون رقمًا موجبًا.' }),
+  paymentDate: z.date({ required_error: 'تاريخ الدفعة مطلوب.' }),
+  currency: z.enum(Object.keys(CURRENCIES) as [Currency, ...Currency[]], { required_error: 'عملة الدفعة مطلوبة.' }),
+});
+type Payment = z.infer<typeof paymentSchema>;
+
+
 // Define the schema for client data with Arabic error messages
 const clientSchema = z.object({
   id: z.string().optional(), // Optional for new clients, required for existing
@@ -86,48 +99,10 @@ const clientSchema = z.object({
   project: z.string().min(1, { message: 'وصف المشروع مطلوب.' }),
   totalProjectCost: z.coerce.number().positive({ message: 'يجب أن تكون التكلفة الإجمالية رقمًا موجبًا.' }),
   currency: z.enum(Object.keys(CURRENCIES) as [Currency, ...Currency[]], { required_error: 'العملة مطلوبة.' }),
-  paymentStatus: z.enum(Object.keys(PAYMENT_STATUSES) as [PaymentStatus, ...PaymentStatus[]], { required_error: 'حالة الدفع مطلوبة.' }),
-  amountPaidSoFar: z.coerce.number().nonnegative({ message: 'المبلغ المدفوع يجب أن يكون صفر أو أكثر.' }).optional(),
-  paymentDate: z.date().optional(),
-}).refine(data => {
-  // Require paymentDate if status is paid or partially_paid
-  if ((data.paymentStatus === 'paid' || data.paymentStatus === 'partially_paid') && !data.paymentDate) {
-    return false;
-  }
-  return true;
-}, {
-  message: 'تاريخ الدفع مطلوب عندما تكون الحالة "تم الدفع" أو "دفع جزئي".',
-  path: ['paymentDate'],
-}).refine(data => {
-    // Require amountPaidSoFar if status is paid or partially_paid
-    if ((data.paymentStatus === 'paid' || data.paymentStatus === 'partially_paid') && (data.amountPaidSoFar === undefined || data.amountPaidSoFar === null)) {
-      return false;
-    }
-    return true;
-  }, {
-    message: 'المبلغ المدفوع مطلوب عندما تكون الحالة "تم الدفع" أو "دفع جزئي".',
-    path: ['amountPaidSoFar'],
-}).refine(data => {
-    // amountPaidSoFar should not exceed totalProjectCost
-    if (data.amountPaidSoFar !== undefined && data.amountPaidSoFar !== null && data.amountPaidSoFar > data.totalProjectCost) {
-        return false;
-    }
-    return true;
-},{
-    message: 'المبلغ المدفوع لا يمكن أن يتجاوز التكلفة الإجمالية للمشروع.',
-    path: ['amountPaidSoFar'],
-}).refine(data => {
-    // If paid, amountPaidSoFar must equal totalProjectCost
-    if (data.paymentStatus === 'paid' && data.amountPaidSoFar !== data.totalProjectCost) {
-        return false;
-    }
-    return true;
-},{
-    message: 'في حالة "تم الدفع"، يجب أن يساوي المبلغ المدفوع التكلفة الإجمالية للمشروع.',
-    path: ['amountPaidSoFar'],
+  // paymentStatus, amountPaidSoFar, paymentDate are derived/managed separately now
 });
-
 type Client = z.infer<typeof clientSchema>;
+
 
 // Define the schema for debt data with Arabic error messages
 const debtSchema = z.object({
@@ -179,12 +154,19 @@ const debtSchema = z.object({
   message: 'في حالة "تم السداد"، يجب أن يساوي المبلغ المسدد مبلغ الدين الإجمالي.',
   path: ['amountRepaid'],
 });
-
 type Debt = z.infer<typeof debtSchema>;
+
+// Schema for the payment form (used when adding a new payment)
+const paymentFormSchema = z.object({
+  paymentAmount: z.coerce.number().positive({ message: 'مبلغ الدفعة يجب أن يكون أكبر من صفر.' }),
+  paymentDate: z.date({ required_error: 'تاريخ الدفعة مطلوب.' }),
+});
+type PaymentFormData = z.infer<typeof paymentFormSchema>;
 
 
 // Local storage keys
-const CLIENT_STORAGE_KEY = 'clientTrackerDataV2';
+const CLIENT_STORAGE_KEY = 'clientTrackerDataV3'; // Incremented version
+const PAYMENT_STORAGE_KEY = 'paymentTrackerDataV1'; // New key for payments
 const DEBT_STORAGE_KEY = 'debtTrackerDataV1';
 
 const EXCHANGE_RATE_API_URL = 'https://open.er-api.com/v6/latest/USD'; // Fetch rates relative to USD
@@ -193,6 +175,80 @@ const EXCHANGE_RATE_API_URL = 'https://open.er-api.com/v6/latest/USD'; // Fetch 
 type ExchangeRates = {
     [key in Currency]?: number;
 };
+
+
+// ----- UTILITY FUNCTIONS -----
+
+// Calculate total amount paid for a client from payments array
+const calculateTotalPaid = (clientId: string, payments: Payment[]): number => {
+  return payments
+    .filter(p => p.clientId === clientId)
+    .reduce((sum, p) => sum + p.amount, 0);
+};
+
+// Get the latest payment date for a client
+const getLatestPaymentDate = (clientId: string, payments: Payment[]): Date | undefined => {
+  const clientPayments = payments
+    .filter(p => p.clientId === clientId)
+    .sort((a, b) => b.paymentDate.getTime() - a.paymentDate.getTime()); // Sort descending by date
+  return clientPayments.length > 0 ? clientPayments[0].paymentDate : undefined;
+};
+
+// Determine payment status based on total paid and total cost
+const determinePaymentStatus = (totalPaid: number, totalCost: number): PaymentStatus => {
+    if (totalPaid <= 0) return 'not_paid';
+    if (totalPaid >= totalCost) return 'paid';
+    return 'partially_paid';
+};
+
+// Format currency using en-US locale for English numbers and standard symbols
+const formatCurrency = (amount: number | null | undefined, currency: Currency) => {
+    if (amount === null || amount === undefined) return '-';
+    const options: Intl.NumberFormatOptions = {
+        style: 'currency',
+        currency: currency,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+        // Use 'en-US' locale to ensure English numerals and standard currency symbols/placement
+        // This overrides the browser's default locale for number formatting.
+    };
+    const locale = 'en-US';
+
+    try {
+        // Handle potential negative zero for display
+        const displayAmount = Object.is(amount, -0) ? 0 : amount;
+        return displayAmount.toLocaleString(locale, options);
+    } catch (e) {
+        // Fallback for environments with limited locale support or errors
+        console.warn(`Locale formatting failed for ${currency} with locale ${locale}:`, e);
+        // Basic fallback with English numerals
+        const symbols: { [key in Currency]: string } = { EGP: 'EGP', SAR: 'SAR', USD: '$', CAD: 'CA$', EUR: '€' };
+        return `${symbols[currency] || currency} ${amount.toFixed(2)}`;
+    }
+};
+
+// Format dates using Arabic locale (arSA)
+const formatDateAr = (date: Date | null | undefined) => {
+    if (!date || isNaN(date.getTime())) return '-';
+    return format(date, 'PPP', { locale: arSA });
+};
+
+// Calculate remaining amount for a client
+const calculateClientRemainingAmount = (totalCost: number, totalPaid: number): number => {
+    return Math.max(0, totalCost - totalPaid);
+};
+
+// Calculate remaining debt amount
+const calculateDebtRemainingAmount = (debt: Partial<Debt>): number => {
+    if (!debt.amount || debt.amount <= 0) return 0;
+    if (debt.status === 'paid') return 0;
+    const repaid = debt.amountRepaid ?? 0;
+    return Math.max(0, debt.amount - repaid);
+};
+
+
+
+// ----- COMPONENTS -----
 
 // Simple Exchange Rate Slider Component
 const ExchangeRateSlider: FC<{ rates: ExchangeRates }> = ({ rates }) => {
@@ -217,16 +273,25 @@ const ExchangeRateSlider: FC<{ rates: ExchangeRates }> = ({ rates }) => {
 };
 
 
+// ----- MAIN PAGE COMPONENT -----
+
 const ClientTracker: FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]); // State for payments
   const [debts, setDebts] = useState<Debt[]>([]); // State for debts
-  const [clientSortConfig, setClientSortConfig] = useState<{ key: keyof Client | 'remainingAmount' | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
+  const [clientSortConfig, setClientSortConfig] = useState<{ key: keyof Client | 'derivedStatus' | 'derivedAmountPaid' | 'derivedRemainingAmount' | 'derivedPaymentDate' | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
   const [debtSortConfig, setDebtSortConfig] = useState<{ key: keyof Debt | 'remainingDebt' | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
   const { toast } = useToast();
+  const toastRef = useRef(toast); // Create a ref for toast
   const [isMounted, setIsMounted] = useState(false); // Track mount state
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates | null>(null); // USD to OTHER rates
   const [rateLoading, setRateLoading] = useState(true);
   const [rateError, setRateError] = useState<string | null>(null);
+
+  // Keep toast ref updated
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   // Fetch exchange rates on mount
   useEffect(() => {
@@ -276,25 +341,22 @@ const ClientTracker: FC = () => {
   // Load data from local storage on initial render after mount
   useEffect(() => {
     setIsMounted(true); // Component is mounted
+
+    // Load Clients
     const storedClients = localStorage.getItem(CLIENT_STORAGE_KEY);
     if (storedClients) {
       try {
         const parsedClients = JSON.parse(storedClients).map((client: any) => ({
           ...client,
           totalProjectCost: typeof client.totalProjectCost === 'number' ? client.totalProjectCost : 0,
-          amountPaidSoFar: typeof client.amountPaidSoFar === 'number' ? client.amountPaidSoFar : undefined,
-          paymentDate: client.paymentDate ? new Date(client.paymentDate) : undefined, // Ensure date is a Date object or undefined
           currency: client.currency || 'EGP', // Default to EGP if missing
-          paymentStatus: client.paymentStatus || 'not_paid', // Default to not_paid if missing
+          // Remove old payment status fields if they exist from previous versions
+          paymentStatus: undefined,
+          amountPaidSoFar: undefined,
+          paymentDate: undefined,
         }));
-        // Basic validation after parsing (optional but recommended)
         const validatedClients = parsedClients.filter((client: any) => {
             try {
-                // Check if paymentDate is valid before parsing
-                if (client.paymentDate && isNaN(new Date(client.paymentDate).getTime())) {
-                     console.warn("Invalid paymentDate found in storage for client:", client.id);
-                     client.paymentDate = undefined; // Set to undefined if invalid
-                }
                 clientSchema.parse(client);
                 return true;
             } catch (e) {
@@ -307,6 +369,36 @@ const ClientTracker: FC = () => {
         console.error("Failed to parse clients from local storage:", error);
       }
     }
+
+    // Load Payments
+    const storedPayments = localStorage.getItem(PAYMENT_STORAGE_KEY);
+    if (storedPayments) {
+        try {
+            const parsedPayments = JSON.parse(storedPayments).map((payment: any) => ({
+                ...payment,
+                amount: typeof payment.amount === 'number' ? payment.amount : 0,
+                paymentDate: payment.paymentDate ? new Date(payment.paymentDate) : new Date(), // Ensure valid date
+                currency: payment.currency || 'EGP', // Default currency if missing
+            }));
+            const validatedPayments = parsedPayments.filter((payment: any) => {
+                try {
+                    if (payment.paymentDate && isNaN(new Date(payment.paymentDate).getTime())) {
+                        console.warn("Invalid paymentDate found in storage for payment:", payment.id);
+                        payment.paymentDate = new Date(); // Default to today if invalid
+                    }
+                    paymentSchema.parse(payment);
+                    return true;
+                } catch (e) {
+                    console.warn("Invalid payment data found in storage:", payment, e);
+                    return false;
+                }
+            });
+            setPayments(validatedPayments);
+        } catch (error) {
+            console.error("Failed to parse payments from local storage:", error);
+        }
+    }
+
 
     // Load debts
     const storedDebts = localStorage.getItem(DEBT_STORAGE_KEY);
@@ -353,6 +445,13 @@ const ClientTracker: FC = () => {
     }
   }, [clients, isMounted]);
 
+  // Save payments to local storage
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem(PAYMENT_STORAGE_KEY, JSON.stringify(payments));
+    }
+  }, [payments, isMounted]);
+
   // Save debts to local storage whenever the debts state changes, only after mount
   useEffect(() => {
     if (isMounted) { // Only run after component has mounted
@@ -360,7 +459,10 @@ const ClientTracker: FC = () => {
     }
   }, [debts, isMounted]);
 
-  // Client Form
+
+  // ----- FORM SETUP -----
+
+  // Client Form (only for adding new clients)
   const clientForm = useForm<Client>({
     resolver: zodResolver(clientSchema),
     defaultValues: {
@@ -368,9 +470,15 @@ const ClientTracker: FC = () => {
       project: '',
       totalProjectCost: 0,
       currency: 'EGP',
-      paymentStatus: 'not_paid',
-      amountPaidSoFar: undefined,
-      paymentDate: undefined,
+    },
+  });
+
+  // Payment Form (for adding new payments to existing clients)
+  const paymentForm = useForm<PaymentFormData>({
+    resolver: zodResolver(paymentFormSchema),
+    defaultValues: {
+      paymentAmount: 0,
+      paymentDate: new Date(),
     },
   });
 
@@ -391,35 +499,15 @@ const ClientTracker: FC = () => {
       },
   });
 
-
-  // Watch client form fields
-  const clientPaymentStatus = clientForm.watch('paymentStatus');
-  const clientSelectedCurrency = clientForm.watch('currency');
-  const clientTotalProjectCost = clientForm.watch('totalProjectCost');
-  const clientAmountPaidSoFar = clientForm.watch('amountPaidSoFar');
-
   // Watch debt form fields
   const debtStatus = debtForm.watch('status');
   const debtAmount = debtForm.watch('amount');
   const debtAmountRepaid = debtForm.watch('amountRepaid');
   const debtSelectedCurrency = debtForm.watch('currency');
 
+  // State for managing which client's payment form is open
+  const [addingPaymentForClientId, setAddingPaymentForClientId] = useState<string | null>(null);
 
-  // Reset conditional client fields when paymentStatus changes
-  useEffect(() => {
-    if (clientPaymentStatus === 'not_paid') {
-      clientForm.setValue('amountPaidSoFar', undefined);
-      clientForm.setValue('paymentDate', undefined);
-      clientForm.clearErrors(['amountPaidSoFar', 'paymentDate']); // Clear potential errors
-    } else if (clientPaymentStatus === 'paid') {
-        // Optionally set amountPaidSoFar to totalProjectCost if status is 'paid'
-         const totalCost = clientForm.getValues('totalProjectCost');
-         if (totalCost > 0) {
-             clientForm.setValue('amountPaidSoFar', totalCost);
-         }
-    }
-    // For 'partially_paid', fields are required but not auto-filled
-  }, [clientPaymentStatus, clientForm]);
 
   // Reset conditional debt fields when status changes
   useEffect(() => {
@@ -436,29 +524,54 @@ const ClientTracker: FC = () => {
   }, [debtStatus, debtForm]);
 
 
-  // Client Submit Handler
+  // ----- DATA MANIPULATION HANDLERS -----
+
+  // Client Submit Handler (Only adds new clients)
   function onClientSubmit(values: Client) {
-      let finalValues = { ...values };
-
-      // Ensure amountPaidSoFar is 0 if status is 'not_paid'
-      if (finalValues.paymentStatus === 'not_paid') {
-          finalValues.amountPaidSoFar = 0;
-          finalValues.paymentDate = undefined; // Ensure date is also cleared
-      }
-      // Ensure amountPaidSoFar equals totalProjectCost if status is 'paid'
-      else if (finalValues.paymentStatus === 'paid') {
-          finalValues.amountPaidSoFar = finalValues.totalProjectCost;
-      }
-
-      const newClient = { ...finalValues, id: crypto.randomUUID() }; // Generate a unique ID
-
+      const newClient = { ...values, id: crypto.randomUUID() }; // Generate a unique ID
       setClients((prevClients) => [...prevClients, newClient]);
-      toast({
+      toastRef.current({ // Use ref here
         title: 'تمت إضافة العميل',
         description: `${values.name} تمت إضافته بنجاح.`,
       });
       clientForm.reset(); // Reset form fields after submission
   }
+
+    // Payment Submit Handler (Adds a payment record for a specific client)
+    function onPaymentSubmit(clientId: string, clientCurrency: Currency) {
+        return (values: PaymentFormData) => {
+            const client = clients.find(c => c.id === clientId);
+            if (!client) return;
+
+            const totalPaid = calculateTotalPaid(clientId, payments);
+            const remaining = calculateClientRemainingAmount(client.totalProjectCost, totalPaid);
+
+            if (values.paymentAmount > remaining) {
+                 paymentForm.setError('paymentAmount', {
+                    type: 'manual',
+                    message: `مبلغ الدفعة (${formatCurrency(values.paymentAmount, clientCurrency)}) يتجاوز المبلغ المتبقي (${formatCurrency(remaining, clientCurrency)}).`,
+                 });
+                 return; // Stop submission
+            }
+
+            const newPayment: Payment = {
+                id: crypto.randomUUID(),
+                clientId: clientId,
+                amount: values.paymentAmount,
+                paymentDate: values.paymentDate,
+                currency: clientCurrency, // Use the client's currency for the payment
+            };
+
+            setPayments((prevPayments) => [...prevPayments, newPayment]);
+            toastRef.current({ // Use ref here
+                title: 'تمت إضافة دفعة',
+                description: `تم تسجيل دفعة لـ ${client.name} بمبلغ ${formatCurrency(values.paymentAmount, clientCurrency)}.`,
+            });
+            paymentForm.reset(); // Reset payment form
+            setAddingPaymentForClientId(null); // Close the form after submission
+        };
+    }
+
 
   // Debt Submit Handler
    function onDebtSubmit(values: Debt) {
@@ -474,7 +587,7 @@ const ClientTracker: FC = () => {
        const newDebt = { ...finalValues, id: crypto.randomUUID() };
 
        setDebts((prevDebts) => [...prevDebts, newDebt]);
-       toast({
+       toastRef.current({ // Use ref here
            title: 'تمت إضافة الدين',
            description: `تمت إضافة الدين على ${values.debtorName} بنجاح.`,
        });
@@ -484,85 +597,127 @@ const ClientTracker: FC = () => {
 
   const deleteClient = (idToDelete: string) => {
     setClients((prevClients) => prevClients.filter(client => client.id !== idToDelete));
-    toast({
+    // Also delete associated payments
+    setPayments((prevPayments) => prevPayments.filter(p => p.clientId !== idToDelete));
+    toastRef.current({ // Use ref here
       title: 'تم حذف العميل',
-      description: `تمت إزالة سجل العميل.`,
+      description: `تمت إزالة سجل العميل وجميع دفعاته.`,
       variant: 'destructive',
     });
   };
 
+   const deletePayment = (paymentIdToDelete: string) => {
+     const paymentToDelete = payments.find(p => p.id === paymentIdToDelete);
+     if (!paymentToDelete) return;
+
+     const client = clients.find(c => c.id === paymentToDelete.clientId);
+     const clientName = client ? client.name : 'عميل غير معروف';
+
+     setPayments((prevPayments) => prevPayments.filter(p => p.id !== paymentIdToDelete));
+     toastRef.current({ // Use ref here
+         title: 'تم حذف الدفعة',
+         description: `تمت إزالة دفعة لـ ${clientName} بتاريخ ${formatDateAr(paymentToDelete.paymentDate)}.`,
+         variant: 'destructive',
+     });
+   };
+
+
    const deleteDebt = (idToDelete: string) => {
        setDebts((prevDebts) => prevDebts.filter(debt => debt.id !== idToDelete));
-       toast({
+       toastRef.current({ // Use ref here
            title: 'تم حذف الدين',
            description: `تمت إزالة سجل الدين.`,
            variant: 'destructive',
        });
    };
 
-  const updateClientStatus = (clientId: string, newStatus: PaymentStatus) => {
-    setClients(prevClients =>
-      prevClients.map(client => {
-        if (client.id === clientId) {
-          let updatedClient = { ...client, paymentStatus: newStatus };
 
-          // Adjust fields based on new status
-          if (newStatus === 'not_paid') {
-            updatedClient.amountPaidSoFar = 0;
-            updatedClient.paymentDate = undefined;
-          } else if (newStatus === 'paid') {
-            updatedClient.amountPaidSoFar = client.totalProjectCost;
-            // If payment date wasn't set before, set it to today (or prompt user)
-            if (!updatedClient.paymentDate) {
-                updatedClient.paymentDate = new Date();
-                toast({
-                    title: 'تنبيه',
-                    description: `تم تحديث حالة الدفع لـ "${client.name}" إلى "تم الدفع". تم تعيين تاريخ الدفع إلى اليوم. يمكنك تعديله لاحقًا إذا لزم الأمر.`,
-                    variant: 'default',
+   // Function to handle status updates triggered from the Select dropdown
+   const handleClientStatusChange = (clientId: string, newStatus: PaymentStatus) => {
+        const client = clients.find(c => c.id === clientId);
+        if (!client) return;
+
+        const totalPaid = calculateTotalPaid(clientId, payments);
+        const currentStatus = determinePaymentStatus(totalPaid, client.totalProjectCost);
+
+        if (newStatus === currentStatus) return; // No change needed
+
+        // Logic based on the *target* status
+        if (newStatus === 'paid') {
+            // If trying to mark as paid but not fully paid, show error/warning
+            if (totalPaid < client.totalProjectCost) {
+                toastRef.current({
+                    title: 'لا يمكن التحديث إلى "تم الدفع"',
+                    description: `العميل ${client.name} لم يسدد التكلفة الإجمالية بعد. المبلغ المتبقي ${formatCurrency(client.totalProjectCost - totalPaid, client.currency)}. قم بإضافة دفعة لتغطية المبلغ المتبقي.`,
+                    variant: 'destructive',
+                });
+                // Revert the select dropdown visually (optional, depends on UX preference)
+                // This requires managing the Select's value externally or forcing a re-render.
+                return;
+            }
+            // If already fully paid, the status is already 'paid'.
+            // If they paid *exactly* the amount, status is already 'paid'.
+            toastRef.current({
+                 title: 'تم التأكيد',
+                 description: `حالة ${client.name} هي "تم الدفع".`,
+             });
+
+        } else if (newStatus === 'partially_paid') {
+            // If switching TO partially_paid
+            if (totalPaid <= 0) {
+                 toastRef.current({
+                    title: 'لا يمكن التحديث إلى "دفع جزئي"',
+                    description: `العميل ${client.name} لم يقم بأي دفعات. قم بإضافة دفعة أولاً.`,
+                    variant: 'destructive',
+                 });
+                return;
+            }
+            if (totalPaid >= client.totalProjectCost) {
+                 toastRef.current({
+                     title: 'تنبيه',
+                     description: `العميل ${client.name} قام بالفعل بدفع التكلفة كاملة أو أكثر. الحالة هي "تم الدفع".`,
+                     variant: 'default',
+                 });
+                 // Optionally revert visual state if needed
+                 return;
+            }
+            // If currently 'not_paid' and becoming 'partially_paid'
+            if (currentStatus === 'not_paid') {
+                // This case shouldn't happen if totalPaid > 0, but as a safeguard:
+                toastRef.current({
+                    title: 'تحديث الحالة',
+                    description: `تم تغيير حالة ${client.name} إلى "دفع جزئي". يرجى إضافة دفعة لتسجيل المبلغ المدفوع.`,
+                });
+                // Maybe open the payment form?
+                setAddingPaymentForClientId(clientId);
+            } else {
+                 toastRef.current({
+                    title: 'تم التأكيد',
+                    description: `حالة ${client.name} هي "دفع جزئي".`,
                 });
             }
-          } else { // partially_paid
-             // If switching to partially paid, ensure amountPaidSoFar and paymentDate exist.
-             if (updatedClient.amountPaidSoFar === undefined || updatedClient.amountPaidSoFar === null || (client.paymentStatus === 'not_paid' && updatedClient.amountPaidSoFar === 0)) {
-                  updatedClient.amountPaidSoFar = undefined;
-                  toast({
-                     title: 'تنبيه',
-                     description: `تم تحديث حالة الدفع لـ "${client.name}" إلى "دفع جزئي". يرجى تحديث المبلغ المدفوع وتاريخ الدفعة.`,
-                     variant: 'default',
-                  });
-             }
-             if (!updatedClient.paymentDate) {
-                 updatedClient.paymentDate = new Date();
-                  toast({
-                      title: 'تنبيه',
-                      description: `تم تعيين تاريخ الدفع لـ "${client.name}" إلى اليوم تلقائيًا لحالة "دفع جزئي". يمكنك تعديله.`,
-                      variant: 'default',
-                  });
-             }
-          }
 
-          // Validate the updated client data (optional but good practice)
-          try {
-            clientSchema.parse(updatedClient);
-            toast({
-                title: 'تم تحديث الحالة',
-                description: `تم تغيير حالة دفع "${client.name}" إلى "${PAYMENT_STATUSES[newStatus]}".`,
-            });
-            return updatedClient;
-          } catch (error: any) {
-            console.error("Validation failed after status update:", error);
-             toast({
-                 title: 'خطأ في التحديث',
-                 description: `فشل تحديث حالة الدفع لـ "${client.name}". ${error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
-                 variant: 'destructive',
+
+        } else if (newStatus === 'not_paid') {
+            // If trying to mark as 'not_paid' but payments exist
+            if (totalPaid > 0) {
+                toastRef.current({
+                    title: 'لا يمكن التحديث إلى "لم يتم الدفع"',
+                    description: `توجد دفعات مسجلة للعميل ${client.name}. لحذف الدفعات وتغيير الحالة، قم بحذف سجلات الدفعات الفردية أولاً.`,
+                    variant: 'destructive',
+                });
+                 // Optionally revert visual state
+                return;
+            }
+            // If no payments exist, status is already 'not_paid'.
+             toastRef.current({
+                 title: 'تم التأكيد',
+                 description: `حالة ${client.name} هي "لم يتم الدفع".`,
              });
-            return client; // Revert if validation fails
-          }
         }
-        return client;
-      })
-    );
-  };
+   };
+
+
 
   const updateDebtStatus = (debtId: string, newStatus: DebtStatus) => {
       setDebts(prevDebts =>
@@ -571,30 +726,36 @@ const ClientTracker: FC = () => {
                   let updatedDebt = { ...debt, status: newStatus };
 
                   if (newStatus === 'outstanding') {
-                      updatedDebt.amountRepaid = 0;
-                      updatedDebt.paidDate = undefined;
+                      updatedDebt.amountRepaid = 0; // Reset amount repaid
+                      updatedDebt.paidDate = undefined; // Clear paid date
                   } else if (newStatus === 'paid') {
-                      updatedDebt.amountRepaid = debt.amount;
-                      if (!updatedDebt.paidDate) {
+                      updatedDebt.amountRepaid = debt.amount; // Set repaid to full amount
+                      if (!updatedDebt.paidDate) { // Set paid date if not already set
                           updatedDebt.paidDate = new Date();
-                          toast({
+                          // Use toast ref inside effect/callback
+                          toastRef.current({
                               title: 'تنبيه',
                               description: `تم تحديث حالة الدين على "${debt.debtorName}" إلى "تم السداد". تم تعيين تاريخ السداد إلى اليوم.`,
                               variant: 'default',
                           });
                       }
                   } else { // partially_paid
+                      // If switching to partially paid, prompt for update but don't clear amountRepaid
                       if (updatedDebt.amountRepaid === undefined || updatedDebt.amountRepaid === null || (debt.status === 'outstanding' && updatedDebt.amountRepaid === 0)) {
-                          updatedDebt.amountRepaid = undefined;
-                           toast({
+                          // If amountRepaid is not set or was 0 coming from outstanding, prompt to add it.
+                           updatedDebt.amountRepaid = undefined; // Keep it undefined until user sets it
+                           // Use toast ref inside effect/callback
+                           toastRef.current({
                               title: 'تنبيه',
                               description: `تم تحديث حالة الدين على "${debt.debtorName}" إلى "سداد جزئي". يرجى تحديث المبلغ المسدد وتاريخ السداد.`,
                               variant: 'default',
                           });
                       }
+                      // Set paidDate if not already set (date of the partial payment)
                       if (!updatedDebt.paidDate) {
                           updatedDebt.paidDate = new Date();
-                           toast({
+                           // Use toast ref inside effect/callback
+                           toastRef.current({
                               title: 'تنبيه',
                               description: `تم تعيين تاريخ السداد للدين على "${debt.debtorName}" إلى اليوم تلقائيًا لحالة "سداد جزئي". يمكنك تعديله.`,
                               variant: 'default',
@@ -602,24 +763,27 @@ const ClientTracker: FC = () => {
                       }
                   }
 
+                  // Validate the updated debt data before saving
                   try {
                       debtSchema.parse(updatedDebt);
-                      toast({
+                      // Use toast ref inside effect/callback
+                      toastRef.current({
                           title: 'تم تحديث الحالة',
                           description: `تم تغيير حالة الدين على "${debt.debtorName}" إلى "${DEBT_STATUSES[newStatus]}".`,
                       });
-                      return updatedDebt;
+                      return updatedDebt; // Return the valid, updated debt object
                   } catch (error: any) {
                        console.error("Validation failed after debt status update:", error);
-                       toast({
+                       // Use toast ref inside effect/callback
+                       toastRef.current({
                            title: 'خطأ في التحديث',
                            description: `فشل تحديث حالة الدين. ${error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
                            variant: 'destructive',
                        });
-                      return debt; // Revert
+                      return debt; // Return original debt if validation fails
                   }
               }
-              return debt;
+              return debt; // Return unchanged debt for other IDs
           })
       );
   };
@@ -639,7 +803,9 @@ const ClientTracker: FC = () => {
    }, [exchangeRates, rateLoading]); // Dependencies
 
 
-  const requestClientSort = (key: keyof Client | 'remainingAmount') => {
+   // ----- SORTING LOGIC -----
+
+  const requestClientSort = (key: keyof Client | 'derivedStatus' | 'derivedAmountPaid' | 'derivedRemainingAmount' | 'derivedPaymentDate') => {
     let direction: 'ascending' | 'descending' = 'ascending';
     if (clientSortConfig.key === key && clientSortConfig.direction === 'ascending') {
       direction = 'descending';
@@ -655,36 +821,50 @@ const ClientTracker: FC = () => {
        setDebtSortConfig({ key, direction });
    };
 
-  const calculateClientRemainingAmount = (client: Partial<Client>): number => {
-      if (!client.totalProjectCost || client.totalProjectCost <= 0) return 0;
-      if (client.paymentStatus === 'paid') return 0;
-      const paid = client.amountPaidSoFar ?? 0;
-      return Math.max(0, client.totalProjectCost - paid);
-  };
-
-  const calculateDebtRemainingAmount = (debt: Partial<Debt>): number => {
-      if (!debt.amount || debt.amount <= 0) return 0;
-      if (debt.status === 'paid') return 0;
-      const repaid = debt.amountRepaid ?? 0;
-      return Math.max(0, debt.amount - repaid);
-  };
-
 
   const sortedClients = useMemo(() => {
     if (!isMounted) return []; // Return empty array during SSR or before mount
 
-    return [...clients].sort((a, b) => {
+    // Map clients to include derived fields for sorting
+    const clientsWithDerivedData = clients.map(client => {
+        const totalPaid = calculateTotalPaid(client.id!, payments);
+        const status = determinePaymentStatus(totalPaid, client.totalProjectCost);
+        const remainingAmount = calculateClientRemainingAmount(client.totalProjectCost, totalPaid);
+        const latestPaymentDate = getLatestPaymentDate(client.id!, payments);
+        return {
+            ...client,
+            derivedStatus: status,
+            derivedAmountPaid: totalPaid,
+            derivedRemainingAmount: remainingAmount,
+            derivedPaymentDate: latestPaymentDate,
+        };
+    });
+
+
+    return clientsWithDerivedData.sort((a, b) => {
         if (!clientSortConfig.key) return 0;
 
         let aValue, bValue;
 
-        if (clientSortConfig.key === 'remainingAmount') {
-            aValue = calculateClientRemainingAmount(a);
-            bValue = calculateClientRemainingAmount(b);
+        // Handle derived keys
+        if (clientSortConfig.key === 'derivedStatus') {
+             aValue = PAYMENT_STATUSES[a.derivedStatus]; // Sort by display name
+             bValue = PAYMENT_STATUSES[b.derivedStatus];
+         } else if (clientSortConfig.key === 'derivedAmountPaid') {
+            aValue = a.derivedAmountPaid;
+            bValue = b.derivedAmountPaid;
+        } else if (clientSortConfig.key === 'derivedRemainingAmount') {
+            aValue = a.derivedRemainingAmount;
+            bValue = b.derivedRemainingAmount;
+        } else if (clientSortConfig.key === 'derivedPaymentDate') {
+            aValue = a.derivedPaymentDate;
+            bValue = b.derivedPaymentDate;
         } else {
+            // Handle direct client keys
             aValue = a[clientSortConfig.key as keyof Client];
             bValue = b[clientSortConfig.key as keyof Client];
         }
+
 
         // Handle undefined/null values consistently
         const aHasValue = aValue !== undefined && aValue !== null;
@@ -706,7 +886,7 @@ const ClientTracker: FC = () => {
         }
         return clientSortConfig.direction === 'ascending' ? comparison : -comparison;
     });
-  }, [clients, clientSortConfig, isMounted]);
+  }, [clients, payments, clientSortConfig, isMounted]);
 
   const sortedDebts = useMemo(() => {
      if (!isMounted) return [];
@@ -744,7 +924,9 @@ const ClientTracker: FC = () => {
   }, [debts, debtSortConfig, isMounted]);
 
 
-  const SortableClientHeader = ({ columnKey, title }: { columnKey: keyof Client | 'remainingAmount', title: string }) => (
+   // ----- UI HELPER COMPONENTS -----
+
+  const SortableClientHeader = ({ columnKey, title }: { columnKey: keyof Client | 'derivedStatus' | 'derivedAmountPaid' | 'derivedRemainingAmount' | 'derivedPaymentDate', title: string }) => (
     <TableHead onClick={() => requestClientSort(columnKey)} className="cursor-pointer hover:bg-muted/50">
       <div className="flex items-center gap-2">
         {title}
@@ -773,56 +955,26 @@ const ClientTracker: FC = () => {
      );
 
 
-   // Format currency using en-US locale for English numbers and standard symbols
-   const formatCurrency = (amount: number | null | undefined, currency: Currency) => {
-    if (amount === null || amount === undefined) return '-';
-    const options: Intl.NumberFormatOptions = {
-        style: 'currency',
-        currency: currency,
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-        // Use 'en-US' locale to ensure English numerals and standard currency symbols/placement
-        // This overrides the browser's default locale for number formatting.
-    };
-    const locale = 'en-US';
 
-    try {
-        // Handle potential negative zero for display
-        const displayAmount = Object.is(amount, -0) ? 0 : amount;
-        return displayAmount.toLocaleString(locale, options);
-    } catch (e) {
-        // Fallback for environments with limited locale support or errors
-        console.warn(`Locale formatting failed for ${currency} with locale ${locale}:`, e);
-        // Basic fallback with English numerals
-        const symbols: { [key in Currency]: string } = { EGP: 'EGP', SAR: 'SAR', USD: '$', CAD: 'CA$', EUR: '€' };
-        return `${symbols[currency] || currency} ${amount.toFixed(2)}`;
-    }
-   };
-
-   // Format dates using Arabic locale (arSA)
-   const formatDateAr = (date: Date | null | undefined) => {
-        if (!date || isNaN(date.getTime())) return '-';
-        return format(date, 'PPP', { locale: arSA });
-   }
-
+   // ----- CALCULATED TOTALS -----
 
   const totalPaidUSD = useMemo(() => {
       if (!isMounted || rateLoading || !exchangeRates) return null;
-      return sortedClients.reduce((sum, client) => {
-          const paidAmount = client.amountPaidSoFar ?? 0;
-          const amountInUSD = convertToUSD(paidAmount, client.currency);
+      return payments.reduce((sum, payment) => {
+          const amountInUSD = convertToUSD(payment.amount, payment.currency);
           return sum + (amountInUSD ?? 0);
       }, 0);
-  }, [sortedClients, isMounted, exchangeRates, rateLoading, convertToUSD]); // Added convertToUSD
+  }, [payments, isMounted, exchangeRates, rateLoading, convertToUSD]); // Depends on payments now
 
     const totalRemainingUSD = useMemo(() => {
       if (!isMounted || rateLoading || !exchangeRates) return null;
-      return sortedClients.reduce((sum, client) => {
-          const remainingAmount = calculateClientRemainingAmount(client);
+      return clients.reduce((sum, client) => {
+          const totalPaid = calculateTotalPaid(client.id!, payments);
+          const remainingAmount = calculateClientRemainingAmount(client.totalProjectCost, totalPaid);
           const amountInUSD = convertToUSD(remainingAmount, client.currency);
           return sum + (amountInUSD ?? 0);
       }, 0);
-    }, [sortedClients, isMounted, exchangeRates, rateLoading, convertToUSD]); // Added convertToUSD
+    }, [clients, payments, isMounted, exchangeRates, rateLoading, convertToUSD]); // Depends on clients and payments
 
     // Calculate total outstanding debt in USD
     const totalOutstandingDebtUSD = useMemo(() => {
@@ -836,6 +988,8 @@ const ClientTracker: FC = () => {
     }, [sortedDebts, isMounted, exchangeRates, rateLoading, convertToUSD]);
 
 
+ // ----- CHART DATA -----
+
  // Process data for the chart (sum of payments per day in USD for the current month)
  const chartData: ChartData[] | null = useMemo(() => {
    if (!isMounted || rateLoading || !exchangeRates) return null; // Return null if rates not ready
@@ -844,27 +998,18 @@ const ClientTracker: FC = () => {
    const startOfMonth = dateFnsStartOfMonth(now);
    const endOfMonth = dateFnsEndOfMonth(now);
 
-   // Filter clients with payments within the current month
-   const paymentsInMonth = sortedClients
+   // Filter payments within the current month
+   const paymentsInMonth = payments
      .filter(
-       (client) =>
-         (client.paymentStatus === 'paid' || client.paymentStatus === 'partially_paid') &&
-         client.paymentDate &&
-         !isNaN(client.paymentDate.getTime()) &&
-         client.paymentDate >= startOfMonth &&
-         client.paymentDate <= endOfMonth &&
-         client.amountPaidSoFar !== undefined && client.amountPaidSoFar !== null // Ensure there's an amount paid
+       (payment) =>
+         payment.paymentDate &&
+         !isNaN(payment.paymentDate.getTime()) &&
+         payment.paymentDate >= startOfMonth &&
+         payment.paymentDate <= endOfMonth
      )
-     .map(client => ({
-       id: client.id, // Include client ID for potential differentiation
-       date: client.paymentDate!,
-       amountUSD: convertToUSD(client.amountPaidSoFar ?? 0, client.currency) ?? 0,
-       // We need the *previous* known amount paid for this client to calculate the increment
-       // This requires more complex state or data structure.
-       // For now, we'll assume `amountPaidSoFar` represents the total paid *on that date*.
-       // This simplification means the chart might not accurately represent daily *income*
-       // if `amountPaidSoFar` is updated multiple times without changing the date,
-       // or if it always stores the cumulative total rather than the payment amount itself.
+     .map(payment => ({
+       date: payment.paymentDate!,
+       amountUSD: convertToUSD(payment.amount, payment.currency) ?? 0,
      }))
      .sort((a, b) => a.date.getTime() - b.date.getTime()); // Sort payments by date
 
@@ -880,30 +1025,30 @@ const ClientTracker: FC = () => {
    }
 
    // Aggregate payments per day
-   // WARNING: This assumes `amountUSD` is the payment amount for that day.
-   // If `amountPaidSoFar` is cumulative, this logic is incorrect for daily income.
-   // A better data structure would store individual payment transactions.
    paymentsInMonth.forEach(payment => {
      const dateStr = format(payment.date, 'yyyy-MM-dd');
      if (dailyTotals[dateStr]) {
-        // If the data represents cumulative, we need the previous day's value for this client
-        // to find the increment. This is complex with the current structure.
-        // Assuming `payment.amountUSD` IS the payment amount for that day:
         dailyTotals[dateStr].total += payment.amountUSD;
      }
    });
 
    // Convert to chart data format
-   return Object.values(dailyTotals)
+   const chartEntries = Object.values(dailyTotals)
      .map(data => ({
-       date: format(data.date, 'd MMM', { locale: arSA }), // Arabic date format
+       date: format(data.date, 'd MMM', { locale: arSA }), // Arabic date format for X-axis label
        total: data.total, // Sum of payments in USD for that day
-     }))
-     // Filter out days with zero income if desired, or keep them to show the full month
-     .filter(d => d.total > 0); // Optional: only show days with income
+     }));
 
- }, [sortedClients, isMounted, exchangeRates, rateLoading, convertToUSD]);
+    // Filter out days with zero income if desired, or keep them
+    // Return only if there's actual income data to show
+    const hasIncome = chartEntries.some(d => d.total > 0);
+    return hasIncome ? chartEntries : []; // Return empty array if no income, or chartEntries to show full month with zeros
 
+ }, [payments, isMounted, exchangeRates, rateLoading, convertToUSD]);
+
+
+
+  // ----- RENDER LOGIC -----
 
   if (!isMounted) {
     // Render a loading state or null during SSR/pre-mount
@@ -915,13 +1060,8 @@ const ClientTracker: FC = () => {
     );
   }
 
-  // Calculate remaining amounts for forms
-  const clientRemainingAmountInForm = calculateClientRemainingAmount({
-    totalProjectCost: clientTotalProjectCost,
-    amountPaidSoFar: clientAmountPaidSoFar,
-    paymentStatus: clientPaymentStatus
-  });
 
+  // Calculate remaining amount for debt form
   const debtRemainingAmountInForm = calculateDebtRemainingAmount({
       amount: debtAmount,
       amountRepaid: debtAmountRepaid,
@@ -1021,112 +1161,6 @@ const ClientTracker: FC = () => {
                         </FormItem>
                     )}
                  />
-
-                <FormField
-                    control={clientForm.control}
-                    name="paymentStatus"
-                    render={({ field }) => (
-                        <FormItem>
-                        <FormLabel className="text-foreground">حالة الدفع</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                            <SelectTrigger className="bg-background">
-                                <SelectValue placeholder="اختر حالة الدفع" />
-                            </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                            {Object.entries(PAYMENT_STATUSES).map(([key, value]) => (
-                                <SelectItem key={key} value={key}>{value}</SelectItem>
-                            ))}
-                            </SelectContent>
-                        </Select>
-                        <FormMessage />
-                        </FormItem>
-                    )}
-                 />
-
-                {/* Conditional Fields based on Payment Status */}
-                 {(clientPaymentStatus === 'paid' || clientPaymentStatus === 'partially_paid') && (
-                    <>
-                       <FormField
-                            control={clientForm.control}
-                            name="amountPaidSoFar"
-                            render={({ field }) => (
-                                <FormItem>
-                                <FormLabel className="text-foreground">
-                                    المبلغ المدفوع حتى الآن
-                                    {clientPaymentStatus === 'paid' && <span className='text-muted-foreground text-xs ml-1'> (يجب أن يساوي التكلفة الإجمالية)</span>}
-                                    </FormLabel>
-                                <FormControl>
-                                    <Input
-                                    type="number"
-                                    placeholder="أدخل المبلغ المدفوع"
-                                    {...field}
-                                    step="0.01"
-                                    className="bg-background"
-                                    value={field.value ?? ''} // Ensure value is controlled, handle undefined
-                                    onChange={(e) => {
-                                        // Allow clearing the field, parse otherwise
-                                        const value = e.target.value === '' ? undefined : parseFloat(e.target.value);
-                                        field.onChange(value);
-                                    }}
-                                    />
-                                </FormControl>
-                                 {/* Show remaining amount hint for partially paid */}
-                                 {clientPaymentStatus === 'partially_paid' && clientAmountPaidSoFar !== undefined && clientAmountPaidSoFar !== null && clientTotalProjectCost > 0 && (
-                                     <FormDescription className="text-sm text-green-600 dark:text-green-400 pt-1 font-medium">
-                                         المبلغ المتبقي: {formatCurrency(clientRemainingAmountInForm, clientSelectedCurrency)}
-                                     </FormDescription>
-                                 )}
-                                <FormMessage />
-                                </FormItem>
-                            )}
-                       />
-                        <FormField
-                            control={clientForm.control}
-                            name="paymentDate"
-                            render={({ field }) => (
-                                <FormItem className="flex flex-col">
-                                <FormLabel className="mb-2 text-foreground">تاريخ الدفعة</FormLabel>
-                                <Popover>
-                                    <PopoverTrigger asChild>
-                                    <FormControl>
-                                        <Button
-                                        variant={'outline'}
-                                        className={cn(
-                                            'w-full pr-3 text-right font-normal justify-between bg-background', // Adjusted text alignment for RTL & space between
-                                            !field.value && 'text-muted-foreground'
-                                        )}
-                                        >
-                                        {field.value && !isNaN(field.value.getTime()) ? ( // Check if date is valid
-                                            format(field.value, 'PPP', { locale: arSA }) // Use Arabic locale for display
-                                        ) : (
-                                            <span>اختر تاريخًا</span>
-                                        )}
-                                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" /> {/* Adjusted margin for RTL */}
-                                        </Button>
-                                    </FormControl>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0" align="start">
-                                    <Calendar
-                                        mode="single"
-                                        selected={field.value}
-                                        onSelect={(date) => field.onChange(date)} // Pass selected date directly
-                                        disabled={(date) =>
-                                        date > new Date() || date < new Date('1900-01-01')
-                                        }
-                                        initialFocus
-                                        locale={arSA} // Set locale for Calendar display
-                                    />
-                                    </PopoverContent>
-                                </Popover>
-                                <FormMessage />
-                                </FormItem>
-                            )}
-                        />
-                     </>
-                 )}
-
               </div>
               <Button type="submit" className="mt-6 w-full md:w-auto bg-primary text-primary-foreground hover:bg-primary/90 transition duration-150 ease-in-out">إضافة عميل</Button>
             </form>
@@ -1376,9 +1410,7 @@ const ClientTracker: FC = () => {
            <CardHeader className="bg-muted/50">
              <CardTitle className="text-xl text-foreground">الدخل اليومي الشهري (بالدولار الأمريكي - تقديري)</CardTitle>
              <AlertDescription className="text-muted-foreground mt-2">
-                ملاحظة: يمثل الرسم البياني الدخل اليومي المقدر بالدولار الأمريكي لهذا الشهر، بناءً على تواريخ الدفع المسجلة ومقدار الدفعة (المبلغ المدفوع حتى الآن).
-                <br/>
-                الدقة تعتمد على تسجيل <code className="font-mono text-sm bg-muted px-1 py-0.5 rounded">المبلغ المدفوع حتى الآن</code> بشكل صحيح ليعكس المبلغ الفعلي المدفوع في ذلك التاريخ. إذا كان الحقل يعكس دائمًا الإجمالي التراكمي، فلن يعكس الرسم البياني الدخل اليومي بدقة. للحصول على دقة مطلقة، يجب تتبع كل دفعة فردية بسجل منفصل (ميزة غير متوفرة حاليًا).
+                ملاحظة: يمثل الرسم البياني مجموع الدفعات المقدر بالدولار الأمريكي لكل يوم في هذا الشهر، بناءً على سجلات الدفع الفردية.
              </AlertDescription>
            </CardHeader>
            <CardContent className="p-4 md:p-6"> {/* Adjusted padding for chart */}
@@ -1393,11 +1425,11 @@ const ClientTracker: FC = () => {
             <AlertDescription>تعذر تحميل الرسم البياني للدخل بسبب خطأ في جلب سعر الصرف.</AlertDescription>
           </Alert>
        )}
-       {chartData?.length === 0 && !rateLoading && !rateError && (
+       {(chartData === null || chartData.length === 0) && !rateLoading && !rateError && ( // Check for null or empty array
            <Alert className="mb-8 shadow border border-yellow-200 bg-yellow-50 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-300">
                <AlertCircle className="h-4 w-4 mr-2" />
                <AlertTitle>لا توجد بيانات لعرضها</AlertTitle>
-               <AlertDescription>لا توجد دفعات مسجلة لهذا الشهر لعرضها في الرسم البياني.</AlertDescription> {/* Updated message */}
+               <AlertDescription>لا توجد دفعات مسجلة لهذا الشهر لعرضها في الرسم البياني.</AlertDescription>
            </Alert>
        )}
 
@@ -1416,36 +1448,38 @@ const ClientTracker: FC = () => {
                 <SortableClientHeader columnKey="project" title="المشروع" />
                 <SortableClientHeader columnKey="totalProjectCost" title="التكلفة الإجمالية" />
                  <TableHead>العملة</TableHead>
-                <SortableClientHeader columnKey="paymentStatus" title="حالة الدفع" />
-                <SortableClientHeader columnKey="amountPaidSoFar" title="المدفوع" />
-                <SortableClientHeader columnKey="remainingAmount" title="المتبقي" />
+                <SortableClientHeader columnKey="derivedStatus" title="حالة الدفع" />
+                <SortableClientHeader columnKey="derivedAmountPaid" title="المدفوع" />
+                <SortableClientHeader columnKey="derivedRemainingAmount" title="المتبقي" />
                 <TableHead>المتبقي (دولار)</TableHead>
-                <SortableClientHeader columnKey="paymentDate" title="تاريخ الدفع" />
+                <SortableClientHeader columnKey="derivedPaymentDate" title="تاريخ آخر دفعة" />
                 <TableHead className="text-left">الإجراءات</TableHead>{/* Adjusted alignment for RTL */}
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedClients.length > 0 ? (
                 sortedClients.map((client) => {
-                    const remainingAmount = calculateClientRemainingAmount(client);
+                    // Use derived values directly from sortedClients
+                    const { derivedStatus: paymentStatus, derivedAmountPaid: amountPaid, derivedRemainingAmount: remainingAmount, derivedPaymentDate: latestPaymentDate } = client;
                     const remainingAmountUSD = convertToUSD(remainingAmount, client.currency);
-                    const amountPaid = client.amountPaidSoFar ?? 0;
+
                     return (
-                      <TableRow key={client.id} className="hover:bg-muted/30 transition-colors duration-150">
+                      <React.Fragment key={client.id}> {/* Use Fragment to wrap row and potential form */}
+                      <TableRow className="hover:bg-muted/30 transition-colors duration-150">
                         <TableCell className="font-medium text-foreground">{client.name}</TableCell>
                         <TableCell className="text-muted-foreground">{client.project}</TableCell>
                         <TableCell className="font-semibold">{formatCurrency(client.totalProjectCost, client.currency)}</TableCell>
                         <TableCell className="text-muted-foreground">{CURRENCIES[client.currency]}</TableCell>
                         <TableCell>
                              <Select
-                                defaultValue={client.paymentStatus}
-                                onValueChange={(newStatus) => client.id && updateClientStatus(client.id, newStatus as PaymentStatus)}
+                                value={paymentStatus} // Use derived status
+                                onValueChange={(newStatus) => client.id && handleClientStatusChange(client.id, newStatus as PaymentStatus)}
                              >
                                 <SelectTrigger className={cn(
                                     "w-[130px] text-xs border rounded-md py-1 px-2 focus:ring-1 focus:ring-ring focus:ring-offset-0", // Basic styling, adjust as needed
-                                     client.paymentStatus === 'paid' && 'text-green-800 bg-green-100 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
-                                     client.paymentStatus === 'partially_paid' && 'text-yellow-800 bg-yellow-100 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700',
-                                     client.paymentStatus === 'not_paid' && 'text-red-800 bg-red-100 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
+                                     paymentStatus === 'paid' && 'text-green-800 bg-green-100 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
+                                     paymentStatus === 'partially_paid' && 'text-yellow-800 bg-yellow-100 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700',
+                                     paymentStatus === 'not_paid' && 'text-red-800 bg-red-100 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
                                  )}>
                                 <SelectValue placeholder="تغيير الحالة" />
                                 </SelectTrigger>
@@ -1463,14 +1497,121 @@ const ClientTracker: FC = () => {
                              remainingAmountUSD !== null ? formatCurrency(remainingAmountUSD, 'USD') :
                              rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
                          </TableCell>
-                        <TableCell className="text-muted-foreground">{formatDateAr(client.paymentDate)}</TableCell> {/* Use Arabic date format */}
-                        <TableCell className="text-left"> {/* Adjusted alignment for RTL */}
+                        <TableCell className="text-muted-foreground">{formatDateAr(latestPaymentDate)}</TableCell> {/* Use Arabic date format */}
+                        <TableCell className="text-left space-x-1"> {/* Adjusted alignment for RTL & Added spacing */}
+                           {/* Add Payment Button - only if not fully paid */}
+                           {paymentStatus !== 'paid' && (
+                             <Button
+                               variant="outline"
+                               size="sm"
+                               onClick={() => setAddingPaymentForClientId(client.id === addingPaymentForClientId ? null : client.id)}
+                               className="text-xs"
+                             >
+                               {addingPaymentForClientId === client.id ? 'إلغاء' : 'إضافة دفعة'}
+                             </Button>
+                           )}
                           <Button variant="ghost" size="icon" onClick={() => client.id && deleteClient(client.id)} className="text-destructive hover:text-destructive/80 transition-colors">
                             <Trash2 className="h-4 w-4" />
-                            <span className="sr-only">حذف</span>
+                            <span className="sr-only">حذف العميل</span>
                           </Button>
                         </TableCell>
                       </TableRow>
+
+                       {/* Payment Form Row - Conditionally Rendered */}
+                        {addingPaymentForClientId === client.id && (
+                            <TableRow className="bg-muted/10 border-t border-dashed">
+                                <TableCell colSpan={10} className="p-4">
+                                    <Form {...paymentForm}>
+                                        <form
+                                            onSubmit={paymentForm.handleSubmit(onPaymentSubmit(client.id!, client.currency))}
+                                            className="flex flex-col sm:flex-row items-start sm:items-end gap-4"
+                                        >
+                                            <FormField
+                                                control={paymentForm.control}
+                                                name="paymentAmount"
+                                                render={({ field }) => (
+                                                    <FormItem className="flex-1">
+                                                        <FormLabel>مبلغ الدفعة ({client.currency})</FormLabel>
+                                                        <FormControl>
+                                                            <Input
+                                                                type="number"
+                                                                placeholder="أدخل المبلغ"
+                                                                {...field}
+                                                                step="0.01"
+                                                                className="bg-background"
+                                                            />
+                                                        </FormControl>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+                                            <FormField
+                                                control={paymentForm.control}
+                                                name="paymentDate"
+                                                render={({ field }) => (
+                                                    <FormItem className="flex flex-col">
+                                                        <FormLabel className="mb-1">تاريخ الدفعة</FormLabel> {/* Adjusted margin */}
+                                                        <Popover>
+                                                            <PopoverTrigger asChild>
+                                                                <FormControl>
+                                                                    <Button
+                                                                        variant={'outline'}
+                                                                        className={cn(
+                                                                            'w-[200px] sm:w-[240px] pr-3 text-right font-normal justify-between bg-background', // Adjusted width and alignment
+                                                                            !field.value && 'text-muted-foreground'
+                                                                        )}
+                                                                    >
+                                                                        {field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}
+                                                                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                                                    </Button>
+                                                                </FormControl>
+                                                            </PopoverTrigger>
+                                                            <PopoverContent className="w-auto p-0" align="start">
+                                                                <Calendar
+                                                                    mode="single"
+                                                                    selected={field.value}
+                                                                    onSelect={field.onChange}
+                                                                    disabled={(date) => date > new Date() || date < new Date('1900-01-01')}
+                                                                    initialFocus
+                                                                    locale={arSA}
+                                                                />
+                                                            </PopoverContent>
+                                                        </Popover>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+                                            <Button type="submit" size="sm" className="bg-green-600 hover:bg-green-700 text-white">
+                                                تأكيد الدفعة
+                                            </Button>
+                                        </form>
+                                    </Form>
+                                      {/* Display individual payments */}
+                                     <div className="mt-4 pt-4 border-t">
+                                         <h4 className="text-sm font-medium mb-2">سجل الدفعات:</h4>
+                                         {payments.filter(p => p.clientId === client.id).length > 0 ? (
+                                             <ul className="list-disc pl-5 space-y-1 text-xs text-muted-foreground">
+                                                 {payments
+                                                     .filter(p => p.clientId === client.id)
+                                                     .sort((a, b) => b.paymentDate.getTime() - a.paymentDate.getTime()) // Show newest first
+                                                     .map(p => (
+                                                         <li key={p.id} className="flex justify-between items-center">
+                                                             <span>{formatCurrency(p.amount, p.currency)} - {formatDateAr(p.paymentDate)}</span>
+                                                             <Button variant="ghost" size="icon" onClick={() => deletePayment(p.id)} className="text-destructive hover:text-destructive/80 h-6 w-6">
+                                                                 <Trash2 className="h-3 w-3" />
+                                                                 <span className="sr-only">حذف الدفعة</span>
+                                                             </Button>
+                                                         </li>
+                                                     ))}
+                                             </ul>
+                                         ) : (
+                                             <p className="text-xs text-muted-foreground">لا توجد دفعات مسجلة لهذا العميل.</p>
+                                         )}
+                                     </div>
+                                </TableCell>
+                            </TableRow>
+                        )}
+                      </React.Fragment>
                     );
                 })
               ) : (
@@ -1545,7 +1686,7 @@ const ClientTracker: FC = () => {
                                       <TableCell className="text-muted-foreground">{CURRENCIES[debt.currency]}</TableCell>
                                       <TableCell>
                                           <Select
-                                              defaultValue={debt.status}
+                                              value={debt.status} // Use current status
                                               onValueChange={(newStatus) => debt.id && updateDebtStatus(debt.id, newStatus as DebtStatus)}
                                           >
                                               <SelectTrigger className={cn(
