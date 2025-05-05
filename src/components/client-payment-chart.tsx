@@ -1,8 +1,9 @@
 
+
 "use client"
 
 import * as React from "react"
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts"
+import { Line, LineChart, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts" // Changed import to LineChart and Line
 
 import {
   ChartContainer,
@@ -11,8 +12,8 @@ import {
 import type { ChartConfig } from "@/components/ui/chart"
 
 export type ChartData = {
-  month: string;
-  total: number; // Now represents total in USD
+  date: string; // Changed from month to date
+  total: number; // Represents total in USD
 }
 
 interface ClientPaymentChartProps {
@@ -38,28 +39,39 @@ export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
 
   return (
     <ChartContainer config={chartConfig} className="min-h-[200px] w-full">
-      <BarChart accessibilityLayer data={data} margin={{ top: 5, right: 0, left: 0, bottom: 5 }}>
+      {/* Changed BarChart to LineChart */}
+      <LineChart accessibilityLayer data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
         <CartesianGrid vertical={false} />
         <XAxis
-          dataKey="month"
+          dataKey="date" // Changed dataKey from month to date
           tickLine={false}
           tickMargin={10}
           axisLine={false}
-          tickFormatter={(value) => value} // Display full month name from data
+          tickFormatter={(value) => value} // Display full date string from data
+          angle={-45} // Angle ticks for better readability if dates are long
+          textAnchor="end" // Adjust anchor for angled text
+          height={50} // Increase height to accommodate angled labels
         />
          <YAxis
             tickFormatter={formatCurrencyUSD} // Use USD formatter
             tickLine={false}
             axisLine={false}
             tickMargin={10}
-            width={80} // Adjust width if needed for currency format
+            // Removed width={80}
           />
         <Tooltip
-          cursor={false}
+          cursor={true} // Enable cursor for LineChart
           content={<ChartTooltipContent formatter={formatCurrencyUSD} hideLabel />} // Use USD formatter
         />
-        <Bar dataKey="total" fill="var(--color-total)" radius={4} />
-      </BarChart>
+        {/* Changed Bar to Line */}
+        <Line
+            type="monotone" // Make the line smooth
+            dataKey="total"
+            stroke="var(--color-total)"
+            strokeWidth={2}
+            dot={false} // Optionally hide dots on the line
+        />
+      </LineChart>
     </ChartContainer>
   )
 }

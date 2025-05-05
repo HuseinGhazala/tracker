@@ -512,47 +512,39 @@ const ClientTracker: FC = () => {
   const chartData: ChartData[] | null = useMemo(() => {
     if (!isMounted || rateLoading || !exchangeRates) return null; // Return null if rates not ready
 
-    const monthlyTotalsUSD: { [key: string]: number } = {};
+    const dailyTotalsUSD: { [key: string]: { total: number, date: Date } } = {};
 
     sortedClients.forEach(client => {
-      if ((client.paymentStatus === 'paid' || client.paymentStatus === 'partially_paid') && client.paymentDate) {
-            const monthYear = format(client.paymentDate, 'yyyy-MM', { locale: arSA }); // Group by year-month
-            // We need to track the *change* in amount paid *in that month*.
-            // This simple approach sums all payments made up to that month, which might not be accurate for a monthly income chart.
-            // A more accurate approach requires tracking individual payments, not just total paid so far.
-            // For simplicity, we'll sum the amountPaidSoFar for clients whose *last* payment date falls in the month.
-            // This is an approximation.
-
-            // Let's sum the *entire* amountPaidSoFar if the paymentDate is in this month.
-            // This assumes paymentDate reflects the *last* payment.
+      // Consider only paid or partially paid clients with a valid payment date
+      if ((client.paymentStatus === 'paid' || client.paymentStatus === 'partially_paid') && client.paymentDate && !isNaN(client.paymentDate.getTime())) {
+            const paymentDateStr = format(client.paymentDate, 'yyyy-MM-dd'); // Group by YYYY-MM-DD
             const paymentUSD = convertToUSD(client.amountPaidSoFar ?? 0, client.currency);
 
+            // This logic still represents the *cumulative* total paid by a client as of their last payment date, assigned to that single day.
+            // It's not a true representation of daily income unless payments are recorded individually.
+            // A more accurate approach would require tracking payment history (e.g., an array of {date, amount}).
+            // For now, we'll sum the 'amountPaidSoFar' on the 'paymentDate'.
+
             if (paymentUSD !== null) {
-                if (!monthlyTotalsUSD[monthYear]) {
-                    monthlyTotalsUSD[monthYear] = 0;
+                if (!dailyTotalsUSD[paymentDateStr]) {
+                    dailyTotalsUSD[paymentDateStr] = { total: 0, date: client.paymentDate };
                 }
-                 // This logic is flawed for monthly income. It sums the *total* paid by a client in the month of their *last* recorded payment.
-                 // A better approach needs payment history.
-                 // Sticking with the current (flawed) logic for now:
-                monthlyTotalsUSD[monthYear] += paymentUSD;
+                 // Summing the *total* paid up to this date on this specific date.
+                 // This can overstate income on days where large cumulative payments are recorded.
+                 // If multiple clients have the same paymentDate, their totals will be summed for that day.
+                dailyTotalsUSD[paymentDateStr].total += paymentUSD;
             }
       }
     });
 
-    // Convert to chart data format and sort by month
-    return Object.entries(monthlyTotalsUSD)
-      .map(([monthYear, total]) => ({ monthYear, total }))
-      .sort((a, b) => a.monthYear.localeCompare(b.monthYear)) // Sort by YYYY-MM string
-      .map(({ monthYear, total }) => {
-        // Ensure date parsing is robust
-        const [year, month] = monthYear.split('-').map(Number);
-        const date = new Date(year, month - 1, 1); // Month is 0-indexed
-
-        // Validate date before formatting
-        const isValidDate = !isNaN(date.getTime());
-        const monthName = isValidDate ? format(date, 'MMMM yyyy', { locale: arSA }) : `بيانات غير صالحة (${monthYear})`;
-
-        return { month: monthName, total }; // Total is now in USD
+    // Convert to chart data format and sort by date
+    return Object.entries(dailyTotalsUSD)
+      .map(([_, data]) => ({ date: data.date, total: data.total }))
+      .sort((a, b) => a.date.getTime() - b.date.getTime()) // Sort by actual Date object
+      .map(({ date, total }) => {
+        // Format the date for display using Arabic locale
+        const formattedDate = format(date, 'd MMMM yyyy', { locale: arSA });
+        return { date: formattedDate, total }; // Total is in USD
       });
 
   }, [sortedClients, isMounted, exchangeRates, rateLoading]);
@@ -794,8 +786,8 @@ const ClientTracker: FC = () => {
        {chartData && chartData.length > 0 && (
          <Card className="mb-8 shadow-md">
            <CardHeader>
-             <CardTitle>الدخل الشهري (بالدولار الأمريكي - تقديري)</CardTitle>
-              <AlertDescription>ملاحظة: الرسم البياني يمثل الدخل الشهري بشكل تقديري بناءً على تاريخ آخر دفعة مسجلة لكل عميل والمبلغ الإجمالي المدفوع حتى ذلك التاريخ. للحصول على دقة أعلى، يجب تتبع الدفعات الفردية.</AlertDescription>
+             <CardTitle>الدخل اليومي (بالدولار الأمريكي - تقديري)</CardTitle>
+              <AlertDescription>ملاحظة: الرسم البياني يمثل الدخل بشكل تقديري بناءً على تاريخ آخر دفعة مسجلة لكل عميل والمبلغ الإجمالي المدفوع حتى ذلك التاريخ. للحصول على دقة أعلى، يجب تتبع الدفعات الفردية.</AlertDescription>
            </CardHeader>
            <CardContent className="pl-2"> {/* Adjusted padding for chart */}
              <ClientPaymentChart data={chartData} />
@@ -925,3 +917,4 @@ const ClientTracker: FC = () => {
 
 export default ClientTracker;
     
+
