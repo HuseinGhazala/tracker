@@ -928,8 +928,9 @@ const ClientTracker: FC = () => {
   if (!isMounted) {
     // Render a loading state or null during SSR/pre-mount
     return (
-        <div className="flex items-center justify-center h-screen">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="flex items-center justify-center h-screen bg-background">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="ml-4 text-lg text-foreground">جاري تحميل البيانات...</p>
         </div>
     );
   }
@@ -950,42 +951,43 @@ const ClientTracker: FC = () => {
 
   return (
     <div className="container mx-auto p-4 md:p-8">
-      <h1 className="text-3xl font-bold mb-6 text-foreground">لوحة التحكم المالية</h1>
+      <h1 className="text-3xl font-bold mb-8 text-center text-primary">لوحة التحكم المالية</h1>
 
         {/* Exchange Rate Info/Error */}
          {rateLoading && (
-            <Alert className="mb-4 bg-blue-100 border-blue-300 text-blue-800">
-              <Loader2 className="h-4 w-4 animate-spin" />
+            <Alert className="mb-6 bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-300 shadow">
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
               <AlertTitle>جاري جلب أسعار الصرف...</AlertTitle>
+              <AlertDescription>لحظات قليلة ويتم عرض أسعار الصرف الحالية.</AlertDescription>
             </Alert>
           )}
-          {rateError && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertCircle className="h-4 w-4"/>
+          {rateError && !rateLoading && (
+            <Alert variant="destructive" className="mb-6 shadow">
+              <AlertCircle className="h-4 w-4 mr-2"/>
               <AlertTitle>خطأ في سعر الصرف</AlertTitle>
-              <AlertDescription>{rateError} لا يمكن حساب القيم بالدولار الأمريكي.</AlertDescription>
+              <AlertDescription>{rateError} لا يمكن حساب القيم بالدولار الأمريكي حالياً.</AlertDescription>
             </Alert>
           )}
           {exchangeRates && !rateLoading && <ExchangeRateSlider rates={exchangeRates} />}
 
 
       {/* Client Form Card */}
-      <Card className="mb-8 shadow-md">
-        <CardHeader>
-          <CardTitle>إضافة عميل جديد</CardTitle>
+      <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
+        <CardHeader className="bg-muted/50">
+          <CardTitle className="text-xl text-foreground">إضافة عميل جديد</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <Form {...clientForm}>
-            <form onSubmit={clientForm.handleSubmit(onClientSubmit)} className="space-y-6"> {/* Increased space */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> {/* Increased gap */}
+            <form onSubmit={clientForm.handleSubmit(onClientSubmit)} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={clientForm.control}
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>اسم العميل</FormLabel>
+                      <FormLabel className="text-foreground">اسم العميل</FormLabel>
                       <FormControl>
-                        <Input placeholder="أدخل اسم العميل" {...field} />
+                        <Input placeholder="أدخل اسم العميل" {...field} className="bg-background"/>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -996,9 +998,9 @@ const ClientTracker: FC = () => {
                   name="project"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>وصف المشروع</FormLabel>
+                      <FormLabel className="text-foreground">وصف المشروع</FormLabel>
                       <FormControl>
-                        <Input placeholder="أدخل تفاصيل المشروع" {...field} />
+                        <Input placeholder="أدخل تفاصيل المشروع" {...field} className="bg-background"/>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1009,9 +1011,9 @@ const ClientTracker: FC = () => {
                   name="totalProjectCost"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>التكلفة الإجمالية للمشروع</FormLabel>
+                      <FormLabel className="text-foreground">التكلفة الإجمالية للمشروع</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="أدخل التكلفة الإجمالية" {...field} step="0.01"/>
+                        <Input type="number" placeholder="أدخل التكلفة الإجمالية" {...field} step="0.01" className="bg-background"/>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1022,10 +1024,10 @@ const ClientTracker: FC = () => {
                     name="currency"
                     render={({ field }) => (
                         <FormItem>
-                        <FormLabel>العملة</FormLabel>
+                        <FormLabel className="text-foreground">العملة</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
-                            <SelectTrigger>
+                            <SelectTrigger className="bg-background">
                                 <SelectValue placeholder="اختر العملة" />
                             </SelectTrigger>
                             </FormControl>
@@ -1045,10 +1047,10 @@ const ClientTracker: FC = () => {
                     name="paymentStatus"
                     render={({ field }) => (
                         <FormItem>
-                        <FormLabel>حالة الدفع</FormLabel>
+                        <FormLabel className="text-foreground">حالة الدفع</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
-                            <SelectTrigger>
+                            <SelectTrigger className="bg-background">
                                 <SelectValue placeholder="اختر حالة الدفع" />
                             </SelectTrigger>
                             </FormControl>
@@ -1071,9 +1073,9 @@ const ClientTracker: FC = () => {
                             name="amountPaidSoFar"
                             render={({ field }) => (
                                 <FormItem>
-                                <FormLabel>
+                                <FormLabel className="text-foreground">
                                     المبلغ المدفوع حتى الآن
-                                    {clientPaymentStatus === 'paid' && <span className='text-muted-foreground text-xs'> (يجب أن يساوي التكلفة الإجمالية)</span>}
+                                    {clientPaymentStatus === 'paid' && <span className='text-muted-foreground text-xs ml-1'> (يجب أن يساوي التكلفة الإجمالية)</span>}
                                     </FormLabel>
                                 <FormControl>
                                     <Input
@@ -1081,6 +1083,7 @@ const ClientTracker: FC = () => {
                                     placeholder="أدخل المبلغ المدفوع"
                                     {...field}
                                     step="0.01"
+                                    className="bg-background"
                                     value={field.value ?? ''} // Ensure value is controlled, handle undefined
                                     onChange={(e) => {
                                         // Allow clearing the field, parse otherwise
@@ -1091,7 +1094,7 @@ const ClientTracker: FC = () => {
                                 </FormControl>
                                  {/* Show remaining amount hint for partially paid */}
                                  {clientPaymentStatus === 'partially_paid' && clientAmountPaidSoFar !== undefined && clientAmountPaidSoFar !== null && clientTotalProjectCost > 0 && (
-                                     <FormDescription className="text-sm text-muted-foreground pt-1">
+                                     <FormDescription className="text-sm text-green-600 dark:text-green-400 pt-1 font-medium">
                                          المبلغ المتبقي: {formatCurrency(clientRemainingAmountInForm, clientSelectedCurrency)}
                                      </FormDescription>
                                  )}
@@ -1104,14 +1107,14 @@ const ClientTracker: FC = () => {
                             name="paymentDate"
                             render={({ field }) => (
                                 <FormItem className="flex flex-col">
-                                <FormLabel className="mb-2">تاريخ الدفعة</FormLabel>
+                                <FormLabel className="mb-2 text-foreground">تاريخ الدفعة</FormLabel>
                                 <Popover>
                                     <PopoverTrigger asChild>
                                     <FormControl>
                                         <Button
                                         variant={'outline'}
                                         className={cn(
-                                            'w-full pr-3 text-right font-normal', // Adjusted text alignment for RTL
+                                            'w-full pr-3 text-right font-normal justify-between bg-background', // Adjusted text alignment for RTL & space between
                                             !field.value && 'text-muted-foreground'
                                         )}
                                         >
@@ -1120,7 +1123,7 @@ const ClientTracker: FC = () => {
                                         ) : (
                                             <span>اختر تاريخًا</span>
                                         )}
-                                        <CalendarIcon className="mr-auto h-4 w-4 opacity-50" /> {/* Adjusted margin for RTL */}
+                                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" /> {/* Adjusted margin for RTL */}
                                         </Button>
                                     </FormControl>
                                     </PopoverTrigger>
@@ -1145,18 +1148,18 @@ const ClientTracker: FC = () => {
                  )}
 
               </div>
-              <Button type="submit" className="mt-4 bg-accent text-accent-foreground hover:bg-accent/90">إضافة عميل</Button>
+              <Button type="submit" className="mt-6 w-full md:w-auto bg-primary text-primary-foreground hover:bg-primary/90 transition duration-150 ease-in-out">إضافة عميل</Button>
             </form>
           </Form>
         </CardContent>
       </Card>
 
       {/* Debt Form Card */}
-      <Card className="mb-8 shadow-md">
-          <CardHeader>
-              <CardTitle>إضافة دين جديد</CardTitle>
+      <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
+          <CardHeader className="bg-muted/50">
+              <CardTitle className="text-xl text-foreground">إضافة دين جديد</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
               <Form {...debtForm}>
                   <form onSubmit={debtForm.handleSubmit(onDebtSubmit)} className="space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1165,9 +1168,9 @@ const ClientTracker: FC = () => {
                               name="description"
                               render={({ field }) => (
                                   <FormItem>
-                                      <FormLabel>وصف الدين</FormLabel>
+                                      <FormLabel className="text-foreground">وصف الدين</FormLabel>
                                       <FormControl>
-                                          <Input placeholder="أدخل وصفًا للدين" {...field} />
+                                          <Input placeholder="أدخل وصفًا للدين" {...field} className="bg-background"/>
                                       </FormControl>
                                       <FormMessage />
                                   </FormItem>
@@ -1178,9 +1181,9 @@ const ClientTracker: FC = () => {
                               name="debtorName"
                               render={({ field }) => (
                                   <FormItem>
-                                      <FormLabel>اسم المدين</FormLabel>
+                                      <FormLabel className="text-foreground">اسم المدين</FormLabel>
                                       <FormControl>
-                                          <Input placeholder="اسم الشخص أو الجهة المدينة" {...field} />
+                                          <Input placeholder="اسم الشخص أو الجهة المدينة" {...field} className="bg-background"/>
                                       </FormControl>
                                       <FormMessage />
                                   </FormItem>
@@ -1191,9 +1194,9 @@ const ClientTracker: FC = () => {
                               name="creditorName"
                               render={({ field }) => (
                                   <FormItem>
-                                      <FormLabel>اسم الدائن</FormLabel>
+                                      <FormLabel className="text-foreground">اسم الدائن</FormLabel>
                                       <FormControl>
-                                          <Input placeholder="اسم الشخص أو الجهة الدائنة" {...field} />
+                                          <Input placeholder="اسم الشخص أو الجهة الدائنة" {...field} className="bg-background"/>
                                       </FormControl>
                                       <FormMessage />
                                   </FormItem>
@@ -1204,9 +1207,9 @@ const ClientTracker: FC = () => {
                               name="amount"
                               render={({ field }) => (
                                   <FormItem>
-                                      <FormLabel>المبلغ الإجمالي للدين</FormLabel>
+                                      <FormLabel className="text-foreground">المبلغ الإجمالي للدين</FormLabel>
                                       <FormControl>
-                                          <Input type="number" placeholder="أدخل المبلغ" {...field} step="0.01"/>
+                                          <Input type="number" placeholder="أدخل المبلغ" {...field} step="0.01" className="bg-background"/>
                                       </FormControl>
                                       <FormMessage />
                                   </FormItem>
@@ -1217,10 +1220,10 @@ const ClientTracker: FC = () => {
                               name="currency"
                               render={({ field }) => (
                                   <FormItem>
-                                  <FormLabel>العملة</FormLabel>
+                                  <FormLabel className="text-foreground">العملة</FormLabel>
                                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                                       <FormControl>
-                                      <SelectTrigger>
+                                      <SelectTrigger className="bg-background">
                                           <SelectValue placeholder="اختر العملة" />
                                       </SelectTrigger>
                                       </FormControl>
@@ -1239,19 +1242,19 @@ const ClientTracker: FC = () => {
                               name="dueDate"
                               render={({ field }) => (
                                   <FormItem className="flex flex-col">
-                                  <FormLabel className="mb-2">تاريخ الاستحقاق</FormLabel>
+                                  <FormLabel className="mb-2 text-foreground">تاريخ الاستحقاق</FormLabel>
                                   <Popover>
                                       <PopoverTrigger asChild>
                                       <FormControl>
                                           <Button
                                           variant={'outline'}
                                           className={cn(
-                                              'w-full pr-3 text-right font-normal',
+                                              'w-full pr-3 text-right font-normal justify-between bg-background',
                                               !field.value && 'text-muted-foreground'
                                           )}
                                           >
                                           {field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}
-                                          <CalendarIcon className="mr-auto h-4 w-4 opacity-50" />
+                                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                                           </Button>
                                       </FormControl>
                                       </PopoverTrigger>
@@ -1274,10 +1277,10 @@ const ClientTracker: FC = () => {
                               name="status"
                               render={({ field }) => (
                                   <FormItem>
-                                  <FormLabel>حالة الدين</FormLabel>
+                                  <FormLabel className="text-foreground">حالة الدين</FormLabel>
                                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                                       <FormControl>
-                                      <SelectTrigger>
+                                      <SelectTrigger className="bg-background">
                                           <SelectValue placeholder="اختر حالة الدين" />
                                       </SelectTrigger>
                                       </FormControl>
@@ -1300,9 +1303,9 @@ const ClientTracker: FC = () => {
                                       name="amountRepaid"
                                       render={({ field }) => (
                                           <FormItem>
-                                          <FormLabel>
+                                          <FormLabel className="text-foreground">
                                               المبلغ المسدد حتى الآن
-                                              {debtStatus === 'paid' && <span className='text-muted-foreground text-xs'> (يجب أن يساوي المبلغ الإجمالي)</span>}
+                                              {debtStatus === 'paid' && <span className='text-muted-foreground text-xs ml-1'> (يجب أن يساوي المبلغ الإجمالي)</span>}
                                           </FormLabel>
                                           <FormControl>
                                               <Input
@@ -1310,6 +1313,7 @@ const ClientTracker: FC = () => {
                                               placeholder="أدخل المبلغ المسدد"
                                               {...field}
                                               step="0.01"
+                                              className="bg-background"
                                               value={field.value ?? ''}
                                               onChange={(e) => {
                                                   const value = e.target.value === '' ? undefined : parseFloat(e.target.value);
@@ -1318,7 +1322,7 @@ const ClientTracker: FC = () => {
                                               />
                                           </FormControl>
                                            {debtStatus === 'partially_paid' && debtAmountRepaid !== undefined && debtAmountRepaid !== null && debtAmount > 0 && (
-                                               <FormDescription className="text-sm text-muted-foreground pt-1">
+                                               <FormDescription className="text-sm text-yellow-600 dark:text-yellow-400 pt-1 font-medium">
                                                    المبلغ المتبقي من الدين: {formatCurrency(debtRemainingAmountInForm, debtSelectedCurrency)}
                                                </FormDescription>
                                            )}
@@ -1331,19 +1335,19 @@ const ClientTracker: FC = () => {
                                       name="paidDate"
                                       render={({ field }) => (
                                           <FormItem className="flex flex-col">
-                                          <FormLabel className="mb-2">تاريخ السداد</FormLabel>
+                                          <FormLabel className="mb-2 text-foreground">تاريخ السداد</FormLabel>
                                           <Popover>
                                               <PopoverTrigger asChild>
                                               <FormControl>
                                                   <Button
                                                   variant={'outline'}
                                                   className={cn(
-                                                      'w-full pr-3 text-right font-normal',
+                                                      'w-full pr-3 text-right font-normal justify-between bg-background',
                                                       !field.value && 'text-muted-foreground'
                                                   )}
                                                   >
                                                   {field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}
-                                                  <CalendarIcon className="mr-auto h-4 w-4 opacity-50" />
+                                                  <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                                                   </Button>
                                               </FormControl>
                                               </PopoverTrigger>
@@ -1370,16 +1374,16 @@ const ClientTracker: FC = () => {
                                 name="notes"
                                 render={({ field }) => (
                                     <FormItem className="md:col-span-2"> {/* Span across 2 columns on medium screens */}
-                                        <FormLabel>ملاحظات</FormLabel>
+                                        <FormLabel className="text-foreground">ملاحظات</FormLabel>
                                         <FormControl>
-                                            <Textarea placeholder="أضف أي ملاحظات إضافية هنا..." {...field} />
+                                            <Textarea placeholder="أضف أي ملاحظات إضافية هنا..." {...field} className="bg-background"/>
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
                                 )}
                             />
                       </div>
-                      <Button type="submit" className="mt-4 bg-primary text-primary-foreground hover:bg-primary/90">إضافة دين</Button>
+                      <Button type="submit" className="mt-6 w-full md:w-auto bg-accent text-accent-foreground hover:bg-accent/90 transition duration-150 ease-in-out">إضافة دين</Button>
                   </form>
               </Form>
           </CardContent>
@@ -1388,30 +1392,30 @@ const ClientTracker: FC = () => {
 
        {/* Payment Chart Card (Cumulative USD for current month) */}
        {chartData && chartData.length > 0 && (
-         <Card className="mb-8 shadow-md">
-           <CardHeader>
-             <CardTitle>الدخل التراكمي الشهري (بالدولار الأمريكي - تقديري)</CardTitle>
-              <AlertDescription>
+         <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
+           <CardHeader className="bg-muted/50">
+             <CardTitle className="text-xl text-foreground">الدخل التراكمي الشهري (بالدولار الأمريكي - تقديري)</CardTitle>
+              <AlertDescription className="text-muted-foreground mt-2">
                  ملاحظة: يمثل الرسم البياني الدخل التراكمي المقدر بالدولار الأمريكي لهذا الشهر، بناءً على تواريخ الدفع المسجلة. يبدأ الرسم البياني من الصفر ويزداد مع كل دفعة مسجلة في الشهر الحالي.
                  <br/>
-                 الدقة تعتمد على تسجيل `المبلغ المدفوع حتى الآن` في تاريخ الدفعة الصحيح. للحصول على دقة مطلقة للدخل اليومي، يجب تتبع كل دفعة بشكل منفصل.
+                 الدقة تعتمد على تسجيل <code className="font-mono text-sm bg-muted px-1 py-0.5 rounded">المبلغ المدفوع حتى الآن</code> في تاريخ الدفعة الصحيح. للحصول على دقة مطلقة للدخل اليومي، يجب تتبع كل دفعة بشكل منفصل.
              </AlertDescription>
            </CardHeader>
-           <CardContent className="pl-2"> {/* Adjusted padding for chart */}
+           <CardContent className="p-4 md:p-6"> {/* Adjusted padding for chart */}
              <ClientPaymentChart data={chartData} />
            </CardContent>
          </Card>
        )}
        {chartData === null && !rateLoading && rateError && (
-          <Alert variant="destructive" className="mb-8">
-              <AlertCircle className="h-4 w-4"/>
+          <Alert variant="destructive" className="mb-8 shadow">
+              <AlertCircle className="h-4 w-4 mr-2"/>
             <AlertTitle>لا يمكن عرض الرسم البياني</AlertTitle>
             <AlertDescription>تعذر تحميل الرسم البياني للدخل بسبب خطأ في جلب سعر الصرف.</AlertDescription>
           </Alert>
        )}
        {chartData?.length === 0 && !rateLoading && !rateError && (
-           <Alert className="mb-8">
-               <AlertCircle className="h-4 w-4" />
+           <Alert className="mb-8 shadow border border-yellow-200 bg-yellow-50 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-300">
+               <AlertCircle className="h-4 w-4 mr-2" />
                <AlertTitle>لا توجد بيانات لعرضها</AlertTitle>
                <AlertDescription>لا توجد دفعات مسجلة لهذا الشهر لعرضها في الرسم البياني.</AlertDescription> {/* Updated message */}
            </Alert>
@@ -1419,15 +1423,15 @@ const ClientTracker: FC = () => {
 
 
       {/* Client Records Card */}
-      <Card className="mb-8 shadow-md">
-        <CardHeader>
-          <CardTitle>سجلات العملاء</CardTitle>
+      <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
+        <CardHeader className="bg-muted/50">
+          <CardTitle className="text-xl text-foreground">سجلات العملاء</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0"> {/* Remove top padding as header provides it */}
           <Table>
-            <TableCaption>قائمة بعملائك والمشاريع.</TableCaption>
+            <TableCaption className="mt-4 mb-2 text-muted-foreground">قائمة بعملائك ومشاريعهم وحالات الدفع.</TableCaption>
             <TableHeader>
-              <TableRow>
+              <TableRow className="border-b border-border">
                 <SortableClientHeader columnKey="name" title="اسم العميل" />
                 <SortableClientHeader columnKey="project" title="المشروع" />
                 <SortableClientHeader columnKey="totalProjectCost" title="التكلفة الإجمالية" />
@@ -1447,21 +1451,21 @@ const ClientTracker: FC = () => {
                     const remainingAmountUSD = convertToUSD(remainingAmount, client.currency);
                     const amountPaid = client.amountPaidSoFar ?? 0;
                     return (
-                      <TableRow key={client.id}>
-                        <TableCell className="font-medium">{client.name}</TableCell>
-                        <TableCell>{client.project}</TableCell>
-                        <TableCell>{formatCurrency(client.totalProjectCost, client.currency)}</TableCell>
-                        <TableCell>{CURRENCIES[client.currency]}</TableCell>
+                      <TableRow key={client.id} className="hover:bg-muted/30 transition-colors duration-150">
+                        <TableCell className="font-medium text-foreground">{client.name}</TableCell>
+                        <TableCell className="text-muted-foreground">{client.project}</TableCell>
+                        <TableCell className="font-semibold">{formatCurrency(client.totalProjectCost, client.currency)}</TableCell>
+                        <TableCell className="text-muted-foreground">{CURRENCIES[client.currency]}</TableCell>
                         <TableCell>
                              <Select
                                 defaultValue={client.paymentStatus}
                                 onValueChange={(newStatus) => client.id && updateClientStatus(client.id, newStatus as PaymentStatus)}
                              >
                                 <SelectTrigger className={cn(
-                                    "w-[120px] text-xs border-0 focus:ring-0 focus:ring-offset-0", // Basic styling, adjust as needed
-                                     client.paymentStatus === 'paid' && 'text-green-800 bg-green-100',
-                                     client.paymentStatus === 'partially_paid' && 'text-yellow-800 bg-yellow-100',
-                                     client.paymentStatus === 'not_paid' && 'text-red-800 bg-red-100'
+                                    "w-[130px] text-xs border rounded-md py-1 px-2 focus:ring-1 focus:ring-ring focus:ring-offset-0", // Basic styling, adjust as needed
+                                     client.paymentStatus === 'paid' && 'text-green-800 bg-green-100 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
+                                     client.paymentStatus === 'partially_paid' && 'text-yellow-800 bg-yellow-100 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700',
+                                     client.paymentStatus === 'not_paid' && 'text-red-800 bg-red-100 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
                                  )}>
                                 <SelectValue placeholder="تغيير الحالة" />
                                 </SelectTrigger>
@@ -1472,16 +1476,16 @@ const ClientTracker: FC = () => {
                                 </SelectContent>
                             </Select>
                         </TableCell>
-                         <TableCell>{formatCurrency(amountPaid, client.currency)}</TableCell>
-                         <TableCell>{formatCurrency(remainingAmount, client.currency)}</TableCell>
-                         <TableCell>
-                            {rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> :
+                         <TableCell className="font-semibold text-green-700 dark:text-green-400">{formatCurrency(amountPaid, client.currency)}</TableCell>
+                         <TableCell className="font-semibold text-red-700 dark:text-red-400">{formatCurrency(remainingAmount, client.currency)}</TableCell>
+                         <TableCell className="font-semibold text-blue-700 dark:text-blue-400">
+                            {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
                              remainingAmountUSD !== null ? formatCurrency(remainingAmountUSD, 'USD') :
-                             rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}
+                             rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
                          </TableCell>
-                        <TableCell>{formatDateAr(client.paymentDate)}</TableCell> {/* Use Arabic date format */}
+                        <TableCell className="text-muted-foreground">{formatDateAr(client.paymentDate)}</TableCell> {/* Use Arabic date format */}
                         <TableCell className="text-left"> {/* Adjusted alignment for RTL */}
-                          <Button variant="ghost" size="icon" onClick={() => client.id && deleteClient(client.id)} className="text-destructive hover:text-destructive/80">
+                          <Button variant="ghost" size="icon" onClick={() => client.id && deleteClient(client.id)} className="text-destructive hover:text-destructive/80 transition-colors">
                             <Trash2 className="h-4 w-4" />
                             <span className="sr-only">حذف</span>
                           </Button>
@@ -1491,28 +1495,28 @@ const ClientTracker: FC = () => {
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center text-muted-foreground">
-                    لم تتم إضافة عملاء بعد.
+                  <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                    لم تتم إضافة عملاء بعد. ابدأ بإضافة عميل جديد باستخدام النموذج أعلاه.
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
-             <TableFooter>
+             <TableFooter className="bg-muted/30">
                 <TableRow>
-                  <TableCell colSpan={7} className="font-semibold text-right">الإجمالي المتبقي (بالدولار الأمريكي)</TableCell>
-                  <TableCell className="font-semibold">
-                    {rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> :
+                  <TableCell colSpan={7} className="font-semibold text-right text-foreground">الإجمالي المتبقي (بالدولار الأمريكي)</TableCell>
+                  <TableCell className="font-bold text-red-700 dark:text-red-400">
+                    {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
                      totalRemainingUSD !== null ? formatCurrency(totalRemainingUSD, 'USD') :
-                     rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}
+                     rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
                   </TableCell>
                    <TableCell colSpan={2}></TableCell>
                 </TableRow>
                  <TableRow>
-                  <TableCell colSpan={7} className="font-semibold text-right">إجمالي المدفوع (بالدولار الأمريكي)</TableCell>
-                  <TableCell className="font-semibold">
-                    {rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> :
+                  <TableCell colSpan={7} className="font-semibold text-right text-foreground">إجمالي المدفوع (بالدولار الأمريكي)</TableCell>
+                  <TableCell className="font-bold text-green-700 dark:text-green-400">
+                    {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
                      totalPaidUSD !== null ? formatCurrency(totalPaidUSD, 'USD') :
-                     rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}
+                     rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
                   </TableCell>
                    <TableCell colSpan={2}></TableCell>
                 </TableRow>
@@ -1522,15 +1526,15 @@ const ClientTracker: FC = () => {
       </Card>
 
       {/* Debt Records Card */}
-      <Card className="shadow-md">
-          <CardHeader>
-              <CardTitle>سجلات الديون</CardTitle>
+      <Card className="shadow-lg border border-border rounded-lg overflow-hidden">
+          <CardHeader className="bg-muted/50">
+              <CardTitle className="text-xl text-foreground">سجلات الديون</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0">
               <Table>
-                  <TableCaption>قائمة بالديون المسجلة.</TableCaption>
+                  <TableCaption className="mt-4 mb-2 text-muted-foreground">قائمة بالديون المستحقة والمدفوعة.</TableCaption>
                   <TableHeader>
-                      <TableRow>
+                      <TableRow className="border-b border-border">
                           <SortableDebtHeader columnKey="description" title="وصف الدين" />
                           <SortableDebtHeader columnKey="debtorName" title="المدين" />
                           <SortableDebtHeader columnKey="creditorName" title="الدائن" />
@@ -1553,22 +1557,22 @@ const ClientTracker: FC = () => {
                               const remainingDebtUSD = convertToUSD(remainingDebt, debt.currency);
                               const amountRepaid = debt.amountRepaid ?? 0;
                               return (
-                                  <TableRow key={debt.id}>
-                                      <TableCell className="font-medium">{debt.description}</TableCell>
-                                      <TableCell>{debt.debtorName}</TableCell>
-                                      <TableCell>{debt.creditorName}</TableCell>
-                                      <TableCell>{formatCurrency(debt.amount, debt.currency)}</TableCell>
-                                      <TableCell>{CURRENCIES[debt.currency]}</TableCell>
+                                  <TableRow key={debt.id} className="hover:bg-muted/30 transition-colors duration-150">
+                                      <TableCell className="font-medium text-foreground">{debt.description}</TableCell>
+                                      <TableCell className="text-muted-foreground">{debt.debtorName}</TableCell>
+                                      <TableCell className="text-muted-foreground">{debt.creditorName}</TableCell>
+                                      <TableCell className="font-semibold">{formatCurrency(debt.amount, debt.currency)}</TableCell>
+                                      <TableCell className="text-muted-foreground">{CURRENCIES[debt.currency]}</TableCell>
                                       <TableCell>
                                           <Select
                                               defaultValue={debt.status}
                                               onValueChange={(newStatus) => debt.id && updateDebtStatus(debt.id, newStatus as DebtStatus)}
                                           >
                                               <SelectTrigger className={cn(
-                                                  "w-[120px] text-xs border-0 focus:ring-0 focus:ring-offset-0",
-                                                  debt.status === 'paid' && 'text-green-800 bg-green-100',
-                                                  debt.status === 'partially_paid' && 'text-yellow-800 bg-yellow-100',
-                                                  debt.status === 'outstanding' && 'text-red-800 bg-red-100'
+                                                  "w-[130px] text-xs border rounded-md py-1 px-2 focus:ring-1 focus:ring-ring focus:ring-offset-0",
+                                                   debt.status === 'paid' && 'text-green-800 bg-green-100 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
+                                                   debt.status === 'partially_paid' && 'text-yellow-800 bg-yellow-100 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700',
+                                                   debt.status === 'outstanding' && 'text-red-800 bg-red-100 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
                                               )}>
                                                   <SelectValue placeholder="تغيير الحالة" />
                                               </SelectTrigger>
@@ -1579,18 +1583,18 @@ const ClientTracker: FC = () => {
                                               </SelectContent>
                                           </Select>
                                       </TableCell>
-                                      <TableCell>{formatCurrency(amountRepaid, debt.currency)}</TableCell>
-                                      <TableCell>{formatCurrency(remainingDebt, debt.currency)}</TableCell>
-                                      <TableCell>
-                                         {rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> :
+                                      <TableCell className="font-semibold text-green-700 dark:text-green-400">{formatCurrency(amountRepaid, debt.currency)}</TableCell>
+                                      <TableCell className="font-semibold text-red-700 dark:text-red-400">{formatCurrency(remainingDebt, debt.currency)}</TableCell>
+                                      <TableCell className="font-semibold text-blue-700 dark:text-blue-400">
+                                         {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
                                           remainingDebtUSD !== null ? formatCurrency(remainingDebtUSD, 'USD') :
-                                          rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}
+                                          rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
                                       </TableCell>
-                                      <TableCell>{formatDateAr(debt.dueDate)}</TableCell> {/* Arabic date format */}
-                                      <TableCell>{formatDateAr(debt.paidDate)}</TableCell> {/* Arabic date format */}
-                                      <TableCell>{debt.notes || '-'}</TableCell>
+                                      <TableCell className="text-muted-foreground">{formatDateAr(debt.dueDate)}</TableCell> {/* Arabic date format */}
+                                      <TableCell className="text-muted-foreground">{formatDateAr(debt.paidDate)}</TableCell> {/* Arabic date format */}
+                                      <TableCell className="text-muted-foreground max-w-[150px] truncate" title={debt.notes || ''}>{debt.notes || '-'}</TableCell>
                                       <TableCell className="text-left">
-                                          <Button variant="ghost" size="icon" onClick={() => debt.id && deleteDebt(debt.id)} className="text-destructive hover:text-destructive/80">
+                                          <Button variant="ghost" size="icon" onClick={() => debt.id && deleteDebt(debt.id)} className="text-destructive hover:text-destructive/80 transition-colors">
                                               <Trash2 className="h-4 w-4" />
                                               <span className="sr-only">حذف</span>
                                           </Button>
@@ -1600,19 +1604,19 @@ const ClientTracker: FC = () => {
                           })
                       ) : (
                           <TableRow>
-                              <TableCell colSpan={13} className="text-center text-muted-foreground">
-                                  لم تتم إضافة ديون بعد.
+                              <TableCell colSpan={13} className="text-center text-muted-foreground py-8">
+                                  لم تتم إضافة ديون بعد. استخدم النموذج أعلاه لتسجيل دين جديد.
                               </TableCell>
                           </TableRow>
                       )}
                   </TableBody>
-                  <TableFooter>
+                  <TableFooter className="bg-muted/30">
                      <TableRow>
-                       <TableCell colSpan={8} className="font-semibold text-right">إجمالي الديون المستحقة (بالدولار الأمريكي)</TableCell>
-                       <TableCell className="font-semibold">
-                         {rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> :
+                       <TableCell colSpan={8} className="font-semibold text-right text-foreground">إجمالي الديون المستحقة (بالدولار الأمريكي)</TableCell>
+                       <TableCell className="font-bold text-red-700 dark:text-red-400">
+                         {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
                           totalOutstandingDebtUSD !== null ? formatCurrency(totalOutstandingDebtUSD, 'USD') :
-                          rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}
+                          rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
                        </TableCell>
                         <TableCell colSpan={4}></TableCell>
                      </TableRow>
