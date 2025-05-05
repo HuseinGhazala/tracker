@@ -94,3 +94,17 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Embla Carousel Styles */
+.embla {
+  overflow: hidden;
+}
+.embla__container {
+  backface-visibility: hidden;
+  display: flex;
+  touch-action: pan-y;
+  height: auto; /* Adjust as needed */
+}
+.embla__slide {
+  position: relative;
+}

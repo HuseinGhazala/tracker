@@ -1,8 +1,6 @@
-
-
 'use client';
 
-import * as React from 'react';
+import * as React from 'react'; // Ensure React is imported
 import type { FC } from 'react';
 import { useState, useEffect, useMemo } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,6 +9,8 @@ import * as z from 'zod';
 import { format } from 'date-fns';
 import { arSA } from 'date-fns/locale'; // Import Arabic locale
 import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle } from 'lucide-react';
+import useEmblaCarousel from 'embla-carousel-react';
+import Autoplay from 'embla-carousel-autoplay';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -35,7 +35,7 @@ import {
     SelectItem,
     SelectTrigger,
     SelectValue,
-} from "@/components/ui/select"
+} from "@/components/ui/select";
 import {
   Table,
   TableHeader,
@@ -128,6 +128,28 @@ const EXCHANGE_RATE_API_URL = 'https://open.er-api.com/v6/latest/USD'; // Fetch 
 type ExchangeRates = {
     [key in Currency]?: number;
 };
+
+// Simple Exchange Rate Slider Component
+const ExchangeRateSlider: FC<{ rates: ExchangeRates }> = ({ rates }) => {
+  const [emblaRef] = useEmblaCarousel({ loop: true }, [Autoplay({ delay: 3000 })]);
+
+  return (
+    <Card className="mb-4 shadow-sm overflow-hidden bg-secondary text-secondary-foreground">
+      <CardContent className="p-3">
+        <div className="embla" ref={emblaRef}>
+          <div className="embla__container flex">
+            {Object.entries(rates).map(([currency, rate]) => (
+              <div key={currency} className="embla__slide flex-grow-0 flex-shrink-0 basis-full min-w-0 text-center">
+                <span className="font-semibold">1 USD</span> = <span className="font-semibold">{rate?.toFixed(4)}</span> {CURRENCIES[currency as Currency] || currency}
+              </div>
+            ))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 
 const ClientTracker: FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -583,20 +605,7 @@ const ClientTracker: FC = () => {
               <AlertDescription>{rateError} لا يمكن حساب القيم بالدولار الأمريكي.</AlertDescription>
             </Alert>
           )}
-          {exchangeRates && !rateLoading && (
-            <Alert className="mb-4 bg-green-100 border-green-300 text-green-800">
-               <AlertTitle>أسعار الصرف (مقابل 1 دولار أمريكي)</AlertTitle>
-               <AlertDescription>
-                 <ul className="list-disc list-inside">
-                   {Object.entries(exchangeRates).map(([currency, rate]) => (
-                     <li key={currency}>
-                       {CURRENCIES[currency as Currency] || currency}: {rate?.toFixed(4)}
-                     </li>
-                   ))}
-                 </ul>
-               </AlertDescription>
-             </Alert>
-          )}
+          {exchangeRates && !rateLoading && <ExchangeRateSlider rates={exchangeRates} />}
 
 
       <Card className="mb-8 shadow-md">
@@ -916,5 +925,3 @@ const ClientTracker: FC = () => {
 };
 
 export default ClientTracker;
-    
-
