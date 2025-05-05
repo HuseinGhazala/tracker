@@ -1,5 +1,7 @@
+
 'use client';
 
+import * as React from 'react'; // Added missing React import
 import type { FC } from 'react';
 import { useState, useEffect } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -56,9 +58,11 @@ const ClientTracker: FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [sortConfig, setSortConfig] = useState<{ key: keyof Client | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
   const { toast } = useToast();
+  const [isMounted, setIsMounted] = useState(false); // Track mount state
 
-  // Load clients from local storage on initial render
+  // Load clients from local storage on initial render after mount
   useEffect(() => {
+    setIsMounted(true); // Component is mounted
     const storedClients = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (storedClients) {
       try {
@@ -69,19 +73,17 @@ const ClientTracker: FC = () => {
         setClients(parsedClients);
       } catch (error) {
         console.error("Failed to parse clients from local storage:", error);
-        // Optionally, notify the user or clear invalid data
         localStorage.removeItem(LOCAL_STORAGE_KEY);
       }
     }
-  }, []);
+  }, []); // Empty dependency array ensures this runs once on mount
 
-  // Save clients to local storage whenever the clients state changes
+  // Save clients to local storage whenever the clients state changes, only after mount
   useEffect(() => {
-    // Avoid saving initial empty array if loading hasn't completed
-    if (clients.length > 0 || localStorage.getItem(LOCAL_STORAGE_KEY)) {
+    if (isMounted) { // Only run after component has mounted
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(clients));
     }
-  }, [clients]);
+  }, [clients, isMounted]);
 
 
   const form = useForm<Client>({
@@ -102,7 +104,6 @@ const ClientTracker: FC = () => {
       description: `${values.name} has been successfully added.`,
     });
     form.reset(); // Reset form fields after submission
-    // Explicitly reset date field if needed, depending on library behavior
     form.setValue('date', undefined as any);
   }
 
@@ -123,28 +124,27 @@ const ClientTracker: FC = () => {
     setSortConfig({ key, direction });
   };
 
-  const sortedClients = [...clients].sort((a, b) => {
-    if (!sortConfig.key) return 0;
+  const sortedClients = React.useMemo(() => {
+    if (!isMounted) return []; // Return empty array during SSR or before mount
+    return [...clients].sort((a, b) => {
+      if (!sortConfig.key) return 0;
 
-    const aValue = a[sortConfig.key];
-    const bValue = b[sortConfig.key];
+      const aValue = a[sortConfig.key];
+      const bValue = b[sortConfig.key];
 
-    if (aValue === undefined || bValue === undefined) return 0; // Handle potential undefined values
+      if (aValue === undefined || bValue === undefined) return 0;
 
-
-    let comparison = 0;
-    if (typeof aValue === 'number' && typeof bValue === 'number') {
-      comparison = aValue - bValue;
-    } else if (aValue instanceof Date && bValue instanceof Date) {
-      comparison = aValue.getTime() - bValue.getTime();
-    } else {
-        // Default to string comparison
-        comparison = String(aValue).localeCompare(String(bValue));
-    }
-
-
-    return sortConfig.direction === 'ascending' ? comparison : -comparison;
-  });
+      let comparison = 0;
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        comparison = aValue - bValue;
+      } else if (aValue instanceof Date && bValue instanceof Date) {
+        comparison = aValue.getTime() - bValue.getTime();
+      } else {
+          comparison = String(aValue).localeCompare(String(bValue));
+      }
+      return sortConfig.direction === 'ascending' ? comparison : -comparison;
+    });
+  }, [clients, sortConfig, isMounted]); // Depend on isMounted
 
   const SortableHeader = ({ columnKey, title }: { columnKey: keyof Client, title: string }) => (
     <TableHead onClick={() => requestSort(columnKey)} className="cursor-pointer hover:bg-muted/50">
@@ -155,8 +155,17 @@ const ClientTracker: FC = () => {
     </TableHead>
   );
 
-  const totalPayment = sortedClients.reduce((sum, client) => sum + (client.payment || 0), 0);
+  const totalPayment = React.useMemo(() => {
+      if (!isMounted) return 0; // Return 0 during SSR or before mount
+      return sortedClients.reduce((sum, client) => sum + (client.payment || 0), 0);
+  }, [sortedClients, isMounted]); // Depend on isMounted
 
+
+  if (!isMounted) {
+    // Optional: Render a loading state or null during SSR/pre-mount
+    // to prevent hydration issues related to local storage access.
+    return null;
+  }
 
   return (
     <div className="container mx-auto p-4 md:p-8">
@@ -279,7 +288,7 @@ const ClientTracker: FC = () => {
                   <TableRow key={client.id}>
                     <TableCell className="font-medium">{client.name}</TableCell>
                     <TableCell>{client.project}</TableCell>
-                    <TableCell>{client.payment.toLocaleString(undefined, { style: 'currency', currency: 'USD' })}</TableCell> {/* Format as currency */}
+                    <TableCell>{client.payment.toLocaleString(undefined, { style: 'currency', currency: 'USD' })}</TableCell>
                     <TableCell>{format(client.date, 'PPP')}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="icon" onClick={() => client.id && deleteClient(client.id)} className="text-destructive hover:text-destructive/80">
