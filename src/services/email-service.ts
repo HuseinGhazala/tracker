@@ -1,15 +1,16 @@
 
 /**
- * @fileOverview Service for sending emails.
- * NOTE: This is a placeholder implementation and WILL NOT send real emails.
+ * @fileOverview Service for sending emails using Nodemailer and Gmail.
+ * IMPORTANT SECURITY NOTICE:
+ * - DO NOT hardcode your Gmail password here. Use environment variables.
+ * - You MUST generate an "App Password" for your Gmail account and use that,
+ *   not your regular account password.
+ * - Enable 2-Step Verification on your Google Account to use App Passwords.
+ * - Using personal Gmail for bulk or application emails has limitations and risks.
+ *   Consider dedicated email services (SendGrid, Mailgun, Resend) for production.
+ * See: https://support.google.com/accounts/answer/185833
  */
-
-// Placeholder for email sending logic.
-// In a real application, you would:
-// 1. Choose an email service provider (e.g., SendGrid, Mailgun, Resend).
-// 2. Install their SDK (e.g., `@sendgrid/mail`, `nodemailer`).
-// 3. Obtain API keys/credentials and store them securely (e.g., environment variables).
-// 4. Replace the console logging below with actual email sending code using the SDK.
+import nodemailer from 'nodemailer';
 
 interface EmailOptions {
   to: string;
@@ -19,65 +20,57 @@ interface EmailOptions {
   attachments?: { filename: string; content: Buffer | string; contentType?: string }[];
 }
 
+// Configure the transporter using environment variables
+// Ensure GMAIL_USER and GMAIL_APP_PASSWORD are set in your .env file
+const transporter = nodemailer.createTransport({
+  service: 'gmail', // Use Gmail service
+  host: 'smtp.gmail.com',
+  port: 465, // Use port 465 for SSL
+  secure: true, // Use SSL
+  auth: {
+    user: process.env.GMAIL_USER, // Your Gmail address from .env
+    pass: process.env.GMAIL_APP_PASSWORD, // Your Gmail App Password from .env
+  },
+});
+
 /**
- * Sends an email (Simulated).
- * This function currently only logs the email details to the console.
+ * Sends an email using Nodemailer with Gmail.
  * @param options - The email options.
- * @returns A promise that resolves when the simulation is complete.
+ * @returns A promise that resolves when the email is sent or rejects on error.
+ * @throws Error if required environment variables are missing or email sending fails.
  */
 export async function sendEmail(options: EmailOptions): Promise<void> {
-  console.warn(`--- SIMULATING Email Sending (No real email will be sent) ---`);
-  console.log(`To: ${options.to}`);
-  console.log(`Subject: ${options.subject}`);
-  if (options.text) {
-    console.log(`Text Body: ${options.text.substring(0, 100)}...`);
-  }
-  if (options.html) {
-    console.log(`HTML Body: [HTML Content Present]`);
-  }
-  if (options.attachments && options.attachments.length > 0) {
-    console.log(`Attachments: ${options.attachments.map(a => a.filename).join(', ')}`);
-    // To view attachment content (for debugging, might be large):
-    // options.attachments.forEach(a => {
-    //   console.log(`  - ${a.filename} (${a.contentType || 'N/A'}, ${typeof a.content === 'string' ? a.content.length + ' chars' : a.content.length + ' bytes'})`);
-    // });
-  }
-  console.log(`--- End Email Simulation ---`);
+  const { GMAIL_USER, GMAIL_APP_PASSWORD } = process.env;
 
-  // Simulate email sending delay
-  await new Promise(resolve => setTimeout(resolve, 500));
+  if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
+    console.error('ERROR: Missing GMAIL_USER or GMAIL_APP_PASSWORD environment variables.');
+    console.warn('Email sending is disabled. Please configure .env file.');
+    // Optionally throw an error or return gracefully depending on desired behavior
+    throw new Error('Email service is not configured. Missing credentials.');
+    // return; // Or simply return without sending if failure is acceptable
+  }
 
-  // In a real implementation, replace the console logs above with actual email sending code.
-  // Example using SendGrid:
-  //
-  // import sgMail from '@sendgrid/mail';
-  // sgMail.setApiKey(process.env.SENDGRID_API_KEY || ''); // Use environment variable
-  //
-  // const msg = {
-  //   to: options.to,
-  //   from: 'your-verified-sender@example.com', // Change to your verified sender
-  //   subject: options.subject,
-  //   text: options.text,
-  //   html: options.html,
-  //   attachments: options.attachments?.map(a => ({
-  //       content: typeof a.content === 'string' ? Buffer.from(a.content).toString('base64') : a.content.toString('base64'),
-  //       filename: a.filename,
-  //       type: a.contentType,
-  //       disposition: 'attachment',
-  //   })),
-  // };
-  //
-  // try {
-  //   await sgMail.send(msg);
-  //   console.log('Email sent successfully via SendGrid.');
-  // } catch (error) {
-  //   console.error('Error sending email via SendGrid:', error);
-  //   if (error.response) {
-  //       console.error(error.response.body)
-  //   }
-  //   throw new Error('Failed to send email.'); // Re-throw or handle error appropriately
-  // }
+  const mailOptions = {
+    from: `"Your App Name" <${GMAIL_USER}>`, // Sender address (must be your Gmail address)
+    to: options.to, // List of receivers
+    subject: options.subject, // Subject line
+    text: options.text, // Plain text body
+    html: options.html, // HTML body
+    attachments: options.attachments?.map(a => ({
+      filename: a.filename,
+      content: a.content, // Nodemailer accepts Buffer or string directly
+      contentType: a.contentType,
+    })),
+  };
 
-  // For now, we just resolve successfully as it's a simulation.
-  return Promise.resolve();
+  try {
+    console.log(`Attempting to send email via Gmail to: ${options.to}`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`Email sent successfully: ${info.messageId}`);
+    console.log(`Preview URL: ${nodemailer.getTestMessageUrl(info)}`); // Useful for ethereal testing if set up
+  } catch (error) {
+    console.error('Error sending email via Gmail:', error);
+    // Rethrow the error so the calling function (e.g., the Genkit flow) knows about the failure
+    throw new Error(`Failed to send email: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }

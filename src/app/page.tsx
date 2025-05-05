@@ -707,6 +707,8 @@ const ClientTracker: FC = () => {
              let newStatus: DebtStatus = 'partially_paid';
              if (values.amountRepaid <= 0) {
                  newStatus = 'outstanding';
+                 values.amountRepaid = 0; // Ensure 0 if outstanding
+                 values.paidDate = undefined; // Clear date if outstanding
              } else if (values.amountRepaid >= originalDebt.amount) {
                  newStatus = 'paid';
                  values.amountRepaid = originalDebt.amount; // Ensure it's exactly the total amount if paid
@@ -1286,7 +1288,7 @@ const ClientTracker: FC = () => {
       setIsSendingReport(true);
       showToast({
           title: 'جاري إرسال التقرير...',
-          description: 'لحظات قليلة ويتم إرسال التقرير اليومي عبر البريد الإلكتروني.',
+          description: 'لحظات قليلة ويتم محاولة إرسال التقرير اليومي عبر البريد الإلكتروني.', // Updated description
       });
 
       try {
@@ -1313,17 +1315,24 @@ const ClientTracker: FC = () => {
 
           if (result.success) {
               showToast({
-                  title: 'تمت محاكاة إرسال التقرير', // Updated title
-                  description: `تم تسجيل محاكاة إرسال التقرير بنجاح. يرجى مراجعة وحدة التحكم (console) لرؤية تفاصيل البريد الإلكتروني المحاكاة. (لا يوجد بريد إلكتروني حقيقي تم إرساله). ${result.message}`, // Updated description
+                  title: 'تم إرسال التقرير',
+                  description: `تم إرسال التقرير بنجاح إلى البريد الإلكتروني المسجل. ${result.message}`, // Updated description
               });
           } else {
               throw new Error(result.message); // Treat flow failure as an error
           }
       } catch (error: any) {
           console.error("Error sending manual report:", error);
+          let errorMessage = `حدث خطأ أثناء إرسال التقرير: ${error.message}`;
+          if (error.message.includes('Missing credentials') || error.message.includes('Invalid login')) {
+              errorMessage = "فشل إرسال التقرير: بيانات اعتماد البريد الإلكتروني (Gmail) غير صحيحة أو مفقودة. يرجى التحقق من إعدادات .env وتأكد من استخدام كلمة مرور التطبيق.";
+          } else if (error.message.includes('Email service is not configured')) {
+               errorMessage = "فشل إرسال التقرير: خدمة البريد الإلكتروني غير مهيأة. يرجى إضافة بيانات اعتماد Gmail إلى ملف .env.";
+          }
+
           showToast({
               title: 'فشل إرسال التقرير',
-              description: `حدث خطأ أثناء إرسال التقرير: ${error.message}`,
+              description: errorMessage,
               variant: 'destructive',
           });
       } finally {
@@ -1395,7 +1404,7 @@ const ClientTracker: FC = () => {
                 )}
             </Button>
             <p className="text-xs text-muted-foreground mt-2">
-                اضغط لمحاكاة إرسال التقرير اليومي المجمع إلى البريد الإلكتروني المسجل (لن يتم إرسال بريد حقيقي).
+               اضغط لإرسال التقرير اليومي المجمع الآن إلى husseinghazala39@gmail.com. تأكد من إعداد بيانات اعتماد Gmail في ملف .env.
             </p>
         </div>
 
