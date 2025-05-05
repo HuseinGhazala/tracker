@@ -38,6 +38,12 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"; // Import Tabs components
+import {
   Table,
   TableHeader,
   TableBody,
@@ -693,7 +699,8 @@ const ClientTracker: FC = () => {
 
              if (!validationResult.success) {
                  console.error("Debt validation failed after repayment update:", validationResult.error);
-                 toast({ // Use direct toast call
+                 // Show toast using useEffect to avoid state update during render
+                 showToast({
                      title: 'خطأ في تحديث السداد',
                      description: `فشل تحديث السداد. ${validationResult.error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
                      variant: 'destructive',
@@ -714,7 +721,8 @@ const ClientTracker: FC = () => {
                 return newDebts;
             });
 
-            toast({ // Use direct toast call
+            // Show toast using useEffect
+             showToast({
                 title: 'تم تحديث السداد',
                 description: `تم تحديث المبلغ المسدد للدين على ${originalDebt.debtorName}. الحالة الآن ${DEBT_STATUSES[newStatus]}.`,
             });
@@ -729,7 +737,8 @@ const ClientTracker: FC = () => {
     setClients((prevClients) => prevClients.filter(client => client.id !== idToDelete));
     // Also delete associated payments
     setPayments((prevPayments) => prevPayments.filter(p => p.clientId !== idToDelete));
-    toast({ // Use direct toast call
+     // Show toast using useEffect
+     showToast({
       title: 'تم حذف العميل',
       description: `تمت إزالة سجل العميل وجميع دفعاته.`,
       variant: 'destructive',
@@ -744,7 +753,8 @@ const ClientTracker: FC = () => {
      const clientName = client ? client.name : 'عميل غير معروف';
 
      setPayments((prevPayments) => prevPayments.filter(p => p.id !== paymentIdToDelete));
-     toast({ // Use direct toast call
+     // Show toast using useEffect
+      showToast({
          title: 'تم حذف الدفعة',
          description: `تمت إزالة دفعة لـ ${clientName} بتاريخ ${formatDateAr(paymentToDelete.paymentDate)}.`,
          variant: 'destructive',
@@ -754,7 +764,8 @@ const ClientTracker: FC = () => {
 
    const deleteDebt = useCallback((idToDelete: string) => {
        setDebts((prevDebts) => prevDebts.filter(debt => debt.id !== idToDelete));
-       toast({ // Use direct toast call
+        // Show toast using useEffect
+        showToast({
            title: 'تم حذف الدين',
            description: `تمت إزالة سجل الدين.`,
            variant: 'destructive',
@@ -781,7 +792,8 @@ const ClientTracker: FC = () => {
         if (newStatusTarget === 'paid') {
             // If trying to mark as paid but not fully paid
             if (totalPaid < client.totalProjectCost) {
-                toast({ // Use direct toast call
+                // Show toast using useEffect
+                 showToast({
                     title: 'لا يمكن التحديث إلى "تم الدفع"',
                     description: `العميل ${client.name} لم يسدد التكلفة الإجمالية بعد. المبلغ المتبقي ${formatCurrency(client.totalProjectCost - totalPaid, client.currency)}. قم بإضافة دفعة لتغطية المبلغ المتبقي.`,
                     variant: 'destructive',
@@ -791,7 +803,8 @@ const ClientTracker: FC = () => {
                 return;
             }
              // If already fully paid, just confirm
-            toast({ // Use direct toast call
+             // Show toast using useEffect
+              showToast({
                  title: 'تم التأكيد',
                  description: `حالة ${client.name} هي بالفعل "تم الدفع".`,
              });
@@ -800,7 +813,8 @@ const ClientTracker: FC = () => {
         } else if (newStatusTarget === 'partially_paid') {
             // If trying to mark as partially_paid but already fully paid
             if (totalPaid >= client.totalProjectCost) {
-                 toast({ // Use direct toast call
+                 // Show toast using useEffect
+                  showToast({
                      title: 'تنبيه',
                      description: `العميل ${client.name} قام بالفعل بدفع التكلفة كاملة أو أكثر. الحالة هي "تم الدفع".`,
                      variant: 'default',
@@ -809,19 +823,20 @@ const ClientTracker: FC = () => {
                  return;
             }
 
-            // Open payment form if transitioning from 'not_paid' or just confirming 'partially_paid'
-            // Always open the form when selecting 'partially_paid' for clarity
+            // Open payment form when selecting 'partially_paid'
             setAddingPaymentForClientId(clientId);
             paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() });
 
             // If coming from not_paid, no payments exist yet
             if (totalPaid <= 0) {
-                 toast({ // Use direct toast call
+                  // Show toast using useEffect
+                   showToast({
                     title: 'إضافة دفعة أولى',
                     description: `حالة ${client.name} الآن "دفع جزئي". الرجاء إضافة أول دفعة.`,
                  });
             } else { // Already partially paid, confirming or editing
-                toast({ // Use direct toast call
+                 // Show toast using useEffect
+                 showToast({
                     title: 'تعديل الدفعة',
                     description: `حالة ${client.name} هي "دفع جزئي". يمكنك تعديل أو إضافة دفعة جديدة.`,
                 });
@@ -831,7 +846,8 @@ const ClientTracker: FC = () => {
         } else if (newStatusTarget === 'not_paid') {
             // If trying to mark as 'not_paid' but payments exist
             if (totalPaid > 0) {
-                toast({ // Use direct toast call
+                 // Show toast using useEffect
+                 showToast({
                     title: 'لا يمكن التحديث إلى "لم يتم الدفع"',
                     description: `توجد دفعات مسجلة للعميل ${client.name}. لحذف الدفعات وتغيير الحالة، قم بحذف سجلات الدفعات الفردية أولاً.`,
                     variant: 'destructive',
@@ -840,7 +856,8 @@ const ClientTracker: FC = () => {
                  return;
             }
             // If no payments exist, confirm status
-             toast({ // Use direct toast call
+             // Show toast using useEffect
+              showToast({
                  title: 'تم التأكيد',
                  description: `حالة ${client.name} هي "لم يتم الدفع".`,
              });
@@ -913,7 +930,8 @@ const ClientTracker: FC = () => {
       const validationResult = debtSchema.safeParse(updatedDebt);
       if (!validationResult.success) {
            console.error("Validation failed during debt status update:", validationResult.error);
-           toast({ // Use direct toast call
+           // Show toast using useEffect
+            showToast({
                title: 'خطأ في تحديث الحالة',
                description: `فشل تحديث حالة الدين. ${validationResult.error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
                variant: 'destructive',
@@ -930,8 +948,8 @@ const ClientTracker: FC = () => {
            return newDebts;
        });
 
-       // Show confirmation toast
-       toast({ // Use direct toast call
+       // Show confirmation toast using useEffect
+        showToast({
            title: 'تم تحديث الحالة',
            description: toastMessage,
        });
@@ -942,6 +960,21 @@ const ClientTracker: FC = () => {
             // Ensure form is pre-filled correctly (already handled by repaymentForm.reset above)
         }
   }, [debts, toast, repaymentForm, editingRepaymentForDebtId]); // Added dependencies
+
+    // Effect to show toasts after render
+    const [toastQueue, setToastQueue] = useState<Parameters<typeof toast>[]>([]);
+
+    const showToast = useCallback((props: Parameters<typeof toast>[0]) => {
+        setToastQueue(prev => [...prev, [props]]);
+    }, []);
+
+    useEffect(() => {
+        if (toastQueue.length > 0) {
+            const [toastProps] = toastQueue[0];
+            toast(toastProps);
+            setToastQueue(prev => prev.slice(1)); // Remove the shown toast from the queue
+        }
+    }, [toastQueue, toast]);
 
 
    // Convert any currency to USD
@@ -1275,800 +1308,811 @@ const ClientTracker: FC = () => {
           )}
           {exchangeRates && !rateLoading && <ExchangeRateSlider rates={exchangeRates} />}
 
+        {/* Tabs for Clients and Debts */}
+        <Tabs defaultValue="clients" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-8">
+                <TabsTrigger value="clients">العملاء والمشاريع</TabsTrigger>
+                <TabsTrigger value="debts">الديون والمستحقات</TabsTrigger>
+            </TabsList>
 
-      {/* Client Form Card */}
-      <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
-        <CardHeader className="bg-muted/50">
-          <CardTitle className="text-xl text-foreground">إضافة عميل جديد</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <Form {...clientForm}>
-            <form onSubmit={clientForm.handleSubmit(onClientSubmit)} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <FormField
-                  control={clientForm.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-foreground">اسم العميل</FormLabel>
-                      <FormControl>
-                        <Input placeholder="أدخل اسم العميل" {...field} className="bg-background"/>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={clientForm.control}
-                  name="project"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-foreground">وصف المشروع</FormLabel>
-                      <FormControl>
-                        <Input placeholder="أدخل تفاصيل المشروع" {...field} className="bg-background"/>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                 <FormField
-                  control={clientForm.control}
-                  name="totalProjectCost"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-foreground">التكلفة الإجمالية للمشروع</FormLabel>
-                      <FormControl>
-                        <Input type="number" placeholder="أدخل التكلفة الإجمالية" {...field} step="0.01" className="bg-background"/>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                 <FormField
-                    control={clientForm.control}
-                    name="currency"
-                    render={({ field }) => (
-                        <FormItem>
-                        <FormLabel className="text-foreground">العملة</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                            <SelectTrigger className="bg-background">
-                                <SelectValue placeholder="اختر العملة" />
-                            </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                            {Object.entries(CURRENCIES).map(([code, name]) => (
-                                <SelectItem key={code} value={code}>{name} ({code})</SelectItem>
-                            ))}
-                            </SelectContent>
-                        </Select>
-                        <FormMessage />
-                        </FormItem>
-                    )}
-                 />
-              </div>
-              <Button type="submit" className="mt-6 w-full md:w-auto bg-primary text-primary-foreground hover:bg-primary/90 transition duration-150 ease-in-out">إضافة عميل</Button>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
-
-      {/* Debt Form Card */}
-      <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
-          <CardHeader className="bg-muted/50">
-              <CardTitle className="text-xl text-foreground">إضافة دين جديد</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-              <Form {...debtForm}>
-                  <form onSubmit={debtForm.handleSubmit(onDebtSubmit)} className="space-y-6">
+            {/* Clients Tab Content */}
+            <TabsContent value="clients">
+              {/* Client Form Card */}
+              <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
+                <CardHeader className="bg-muted/50">
+                  <CardTitle className="text-xl text-foreground">إضافة عميل جديد</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  <Form {...clientForm}>
+                    <form onSubmit={clientForm.handleSubmit(onClientSubmit)} className="space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <FormField
-                              control={debtForm.control}
-                              name="description"
-                              render={({ field }) => (
-                                  <FormItem>
-                                      <FormLabel className="text-foreground">وصف الدين</FormLabel>
-                                      <FormControl>
-                                          <Input placeholder="أدخل وصفًا للدين" {...field} className="bg-background"/>
-                                      </FormControl>
-                                      <FormMessage />
-                                  </FormItem>
-                              )}
-                          />
-                          <FormField
-                              control={debtForm.control}
-                              name="debtorName"
-                              render={({ field }) => (
-                                  <FormItem>
-                                      <FormLabel className="text-foreground">اسم المدين</FormLabel>
-                                      <FormControl>
-                                          <Input placeholder="اسم الشخص أو الجهة المدينة" {...field} className="bg-background"/>
-                                      </FormControl>
-                                      <FormMessage />
-                                  </FormItem>
-                              )}
-                          />
-                          <FormField
-                              control={debtForm.control}
-                              name="creditorName"
-                              render={({ field }) => (
-                                  <FormItem>
-                                      <FormLabel className="text-foreground">اسم الدائن</FormLabel>
-                                      <FormControl>
-                                          <Input placeholder="اسم الشخص أو الجهة الدائنة" {...field} className="bg-background"/>
-                                      </FormControl>
-                                      <FormMessage />
-                                  </FormItem>
-                              )}
-                          />
-                          <FormField
-                              control={debtForm.control}
-                              name="amount"
-                              render={({ field }) => (
-                                  <FormItem>
-                                      <FormLabel className="text-foreground">المبلغ الإجمالي للدين</FormLabel>
-                                      <FormControl>
-                                          <Input type="number" placeholder="أدخل المبلغ" {...field} step="0.01" className="bg-background"/>
-                                      </FormControl>
-                                      <FormMessage />
-                                  </FormItem>
-                              )}
-                          />
-                           <FormField
-                              control={debtForm.control}
-                              name="currency"
-                              render={({ field }) => (
-                                  <FormItem>
-                                  <FormLabel className="text-foreground">العملة</FormLabel>
-                                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                      <FormControl>
-                                      <SelectTrigger className="bg-background">
-                                          <SelectValue placeholder="اختر العملة" />
-                                      </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent>
-                                      {Object.entries(CURRENCIES).map(([code, name]) => (
-                                          <SelectItem key={code} value={code}>{name} ({code})</SelectItem>
-                                      ))}
-                                      </SelectContent>
-                                  </Select>
-                                  <FormMessage />
-                                  </FormItem>
-                              )}
-                           />
-                           <FormField
-                              control={debtForm.control}
-                              name="dueDate"
-                              render={({ field }) => (
-                                  <FormItem className="flex flex-col">
-                                  <FormLabel className="mb-2 text-foreground">تاريخ الاستحقاق</FormLabel>
-                                  <Popover>
-                                      <PopoverTrigger asChild>
-                                      <FormControl>
-                                          <Button
-                                          variant={'outline'}
-                                          className={cn(
-                                              'w-full pr-3 text-right font-normal justify-between bg-background',
-                                              !field.value && 'text-muted-foreground'
-                                          )}
-                                          >
-                                          {field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}
-                                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                          </Button>
-                                      </FormControl>
-                                      </PopoverTrigger>
-                                      <PopoverContent className="w-auto p-0" align="start">
-                                      <Calendar
-                                          mode="single"
-                                          selected={field.value}
-                                          onSelect={field.onChange}
-                                          initialFocus
-                                          locale={arSA}
-                                      />
-                                      </PopoverContent>
-                                  </Popover>
-                                  <FormMessage />
-                                  </FormItem>
-                              )}
-                          />
-                           <FormField
-                              control={debtForm.control}
-                              name="status"
-                              render={({ field }) => (
-                                  <FormItem>
-                                  <FormLabel className="text-foreground">حالة الدين</FormLabel>
-                                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                      <FormControl>
-                                      <SelectTrigger className="bg-background">
-                                          <SelectValue placeholder="اختر حالة الدين" />
-                                      </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent>
-                                      {Object.entries(DEBT_STATUSES).map(([key, value]) => (
-                                          <SelectItem key={key} value={key}>{value}</SelectItem>
-                                      ))}
-                                      </SelectContent>
-                                  </Select>
-                                  <FormMessage />
-                                  </FormItem>
-                              )}
-                          />
-
-                         {/* Conditional Fields for Debt Repayment in Main Form */}
-                         {(debtStatus === 'paid' || debtStatus === 'partially_paid') && (
-                              <>
-                                 <FormField
-                                      control={debtForm.control}
-                                      name="amountRepaid"
-                                      render={({ field }) => (
-                                          <FormItem>
-                                          <FormLabel className="text-foreground">
-                                              المبلغ المسدد حتى الآن
-                                              {debtStatus === 'paid' && <span className='text-muted-foreground text-xs ml-1'> (يجب أن يساوي المبلغ الإجمالي)</span>}
-                                          </FormLabel>
-                                          <FormControl>
-                                              <Input
-                                                  type="number"
-                                                  placeholder="أدخل المبلغ المسدد"
-                                                  {...field}
-                                                  step="0.01"
-                                                  className="bg-background"
-                                                  value={field.value ?? ''} // Handle undefined/null for input value
-                                                  onChange={(e) => {
-                                                      // Convert empty string or invalid number to undefined, otherwise parse float
-                                                      const value = e.target.value === '' ? undefined : parseFloat(e.target.value);
-                                                      field.onChange(isNaN(value as number) ? undefined : value); // Pass undefined if NaN
-                                                  }}
-                                                  disabled={debtStatus === 'paid'} // Disable if fully paid in main form
-                                               />
-                                          </FormControl>
-                                           {debtStatus === 'partially_paid' && debtAmountRepaid !== undefined && debtAmountRepaid !== null && debtAmount > 0 && (
-                                               <FormDescription className="text-sm text-yellow-600 dark:text-yellow-400 pt-1 font-medium">
-                                                   المبلغ المتبقي من الدين: {formatCurrency(debtRemainingAmountInForm, debtSelectedCurrency)}
-                                               </FormDescription>
-                                           )}
-                                          <FormMessage />
-                                          </FormItem>
-                                      )}
-                                 />
-                                  <FormField
-                                      control={debtForm.control}
-                                      name="paidDate"
-                                      render={({ field }) => (
-                                          <FormItem className="flex flex-col">
-                                          <FormLabel className="mb-2 text-foreground">تاريخ السداد</FormLabel>
-                                          <Popover>
-                                              <PopoverTrigger asChild>
-                                              <FormControl>
-                                                  <Button
-                                                  variant={'outline'}
-                                                  className={cn(
-                                                      'w-full pr-3 text-right font-normal justify-between bg-background',
-                                                      !field.value && 'text-muted-foreground'
-                                                  )}
-                                                  >
-                                                  {field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}
-                                                  <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                                  </Button>
-                                              </FormControl>
-                                              </PopoverTrigger>
-                                              <PopoverContent className="w-auto p-0" align="start">
-                                              <Calendar
-                                                  mode="single"
-                                                  selected={field.value}
-                                                  onSelect={field.onChange}
-                                                  disabled={(date) => date > new Date() || date < new Date('1900-01-01')}
-                                                  initialFocus
-                                                  locale={arSA}
-                                              />
-                                              </PopoverContent>
-                                          </Popover>
-                                          <FormMessage />
-                                          </FormItem>
-                                      )}
-                                  />
-                               </>
-                           )}
-                           {/* Notes field (full width) */}
-                            <FormField
-                                control={debtForm.control}
-                                name="notes"
-                                render={({ field }) => (
-                                    <FormItem className="md:col-span-2"> {/* Span across 2 columns on medium screens */}
-                                        <FormLabel className="text-foreground">ملاحظات</FormLabel>
-                                        <FormControl>
-                                            <Textarea placeholder="أضف أي ملاحظات إضافية هنا..." {...field} className="bg-background"/>
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
+                        <FormField
+                          control={clientForm.control}
+                          name="name"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-foreground">اسم العميل</FormLabel>
+                              <FormControl>
+                                <Input placeholder="أدخل اسم العميل" {...field} className="bg-background"/>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={clientForm.control}
+                          name="project"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-foreground">وصف المشروع</FormLabel>
+                              <FormControl>
+                                <Input placeholder="أدخل تفاصيل المشروع" {...field} className="bg-background"/>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                         <FormField
+                          control={clientForm.control}
+                          name="totalProjectCost"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-foreground">التكلفة الإجمالية للمشروع</FormLabel>
+                              <FormControl>
+                                <Input type="number" placeholder="أدخل التكلفة الإجمالية" {...field} step="0.01" className="bg-background"/>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                         <FormField
+                            control={clientForm.control}
+                            name="currency"
+                            render={({ field }) => (
+                                <FormItem>
+                                <FormLabel className="text-foreground">العملة</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <FormControl>
+                                    <SelectTrigger className="bg-background">
+                                        <SelectValue placeholder="اختر العملة" />
+                                    </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                    {Object.entries(CURRENCIES).map(([code, name]) => (
+                                        <SelectItem key={code} value={code}>{name} ({code})</SelectItem>
+                                    ))}
+                                    </SelectContent>
+                                </Select>
+                                <FormMessage />
+                                </FormItem>
+                            )}
+                         />
                       </div>
-                      <Button type="submit" className="mt-6 w-full md:w-auto bg-accent text-accent-foreground hover:bg-accent/90 transition duration-150 ease-in-out">إضافة دين</Button>
-                  </form>
-              </Form>
-          </CardContent>
-      </Card>
+                      <Button type="submit" className="mt-6 w-full md:w-auto bg-primary text-primary-foreground hover:bg-primary/90 transition duration-150 ease-in-out">إضافة عميل</Button>
+                    </form>
+                  </Form>
+                </CardContent>
+              </Card>
 
+              {/* Cumulative Income Chart Card */}
+              <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
+                 <CardHeader className="bg-muted/50">
+                   <CardTitle className="text-xl text-foreground">الدخل الشهري التراكمي (بالدولار الأمريكي - تقديري)</CardTitle>
+                   <AlertDescription className="text-muted-foreground mt-2">
+                      ملاحظة: يمثل الرسم البياني إجمالي الدخل المقدر بالدولار الأمريكي المتراكم خلال هذا الشهر.
+                   </AlertDescription>
+                 </CardHeader>
+                 <CardContent className="p-4 md:p-6">
+                   {cumulativeChartData && cumulativeChartData.length > 1 ? ( // Need at least start and one data point
+                     <ClientPaymentChart data={cumulativeChartData} />
+                   ) : rateLoading ? (
+                       <div className="flex items-center justify-center h-[300px]">
+                         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                         <p className="ml-2 text-muted-foreground">جاري تحميل بيانات الرسم البياني...</p>
+                       </div>
+                    ) : rateError ? (
+                       <Alert variant="destructive" className="h-[300px] flex flex-col items-center justify-center">
+                         <AlertCircle className="h-6 w-6 mb-2"/>
+                         <AlertTitle>لا يمكن عرض الرسم البياني</AlertTitle>
+                         <AlertDescription>تعذر تحميل الرسم البياني للدخل بسبب خطأ في جلب سعر الصرف.</AlertDescription>
+                       </Alert>
+                    ) : (
+                       <Alert className="h-[300px] flex flex-col items-center justify-center shadow border border-yellow-200 bg-yellow-50 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-300">
+                         <AlertCircle className="h-6 w-6 mb-2" />
+                         <AlertTitle>لا توجد بيانات لعرضها</AlertTitle>
+                         <AlertDescription>لا توجد دفعات مسجلة لهذا الشهر لعرضها في الرسم البياني.</AlertDescription>
+                       </Alert>
+                   )}
+                 </CardContent>
+               </Card>
 
-       {/* Cumulative Income Chart Card (Area chart showing total income in USD for current month) */}
-        <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
-           <CardHeader className="bg-muted/50">
-             <CardTitle className="text-xl text-foreground">الدخل الشهري التراكمي (بالدولار الأمريكي - تقديري)</CardTitle>
-             <AlertDescription className="text-muted-foreground mt-2">
-                ملاحظة: يمثل الرسم البياني إجمالي الدخل المقدر بالدولار الأمريكي المتراكم خلال هذا الشهر.
-             </AlertDescription>
-           </CardHeader>
-           <CardContent className="p-4 md:p-6">
-             {cumulativeChartData && cumulativeChartData.length > 1 ? ( // Need at least start and one data point
-               <ClientPaymentChart data={cumulativeChartData} />
-             ) : rateLoading ? (
-                 <div className="flex items-center justify-center h-[300px]">
-                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                   <p className="ml-2 text-muted-foreground">جاري تحميل بيانات الرسم البياني...</p>
-                 </div>
-              ) : rateError ? (
-                 <Alert variant="destructive" className="h-[300px] flex flex-col items-center justify-center">
-                   <AlertCircle className="h-6 w-6 mb-2"/>
-                   <AlertTitle>لا يمكن عرض الرسم البياني</AlertTitle>
-                   <AlertDescription>تعذر تحميل الرسم البياني للدخل بسبب خطأ في جلب سعر الصرف.</AlertDescription>
-                 </Alert>
-              ) : (
-                 <Alert className="h-[300px] flex flex-col items-center justify-center shadow border border-yellow-200 bg-yellow-50 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-300">
-                   <AlertCircle className="h-6 w-6 mb-2" />
-                   <AlertTitle>لا توجد بيانات لعرضها</AlertTitle>
-                   <AlertDescription>لا توجد دفعات مسجلة لهذا الشهر لعرضها في الرسم البياني.</AlertDescription>
-                 </Alert>
-             )}
-           </CardContent>
-         </Card>
+               {/* Client Records Card */}
+               <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
+                 <CardHeader className="bg-muted/50">
+                   <CardTitle className="text-xl text-foreground">سجلات العملاء</CardTitle>
+                 </CardHeader>
+                 <CardContent className="pt-0"> {/* Remove top padding as header provides it */}
+                   <Table>
+                     <TableCaption className="mt-4 mb-2 text-muted-foreground">قائمة بعملائك ومشاريعهم وحالات الدفع.</TableCaption>
+                     <TableHeader>
+                       <TableRow>{/* Ensure no whitespace */}
+                         <SortableClientHeader columnKey="name" title="اسم العميل" />{/* Ensure no whitespace */}
+                         <SortableClientHeader columnKey="project" title="المشروع" />{/* Ensure no whitespace */}
+                         <SortableClientHeader columnKey="totalProjectCost" title="التكلفة الإجمالية" />{/* Ensure no whitespace */}
+                          <TableHead>العملة</TableHead>{/* Ensure no whitespace */}
+                         <SortableClientHeader columnKey="derivedStatus" title="حالة الدفع" />{/* Ensure no whitespace */}
+                         <SortableClientHeader columnKey="derivedAmountPaid" title="المدفوع" />{/* Ensure no whitespace */}
+                         <SortableClientHeader columnKey="derivedRemainingAmount" title="المتبقي" />{/* Ensure no whitespace */}
+                         <TableHead>المتبقي (دولار)</TableHead>{/* Ensure no whitespace */}
+                         <SortableClientHeader columnKey="derivedPaymentDate" title="تاريخ آخر دفعة" />{/* Ensure no whitespace */}
+                         <TableHead className="text-left">الإجراءات</TableHead>{/* Ensure no whitespace */}
+                       </TableRow>
+                     </TableHeader>
+                     <TableBody>{/* Ensure no whitespace */}
+                       {sortedClients.length > 0 ? (
+                         sortedClients.map((client) => {
+                             // Use derived values directly from sortedClients
+                             const { derivedStatus: paymentStatus, derivedAmountPaid: amountPaid, derivedRemainingAmount: remainingAmount, derivedPaymentDate: latestPaymentDate } = client;
+                             const remainingAmountUSD = convertToUSD(remainingAmount, client.currency);
+                             const isAddingPayment = addingPaymentForClientId === client.id;
 
+                             return (
+                               <React.Fragment key={client.id}> {/* Use Fragment to wrap row and potential form */}
+                               <TableRow className="hover:bg-muted/30 transition-colors duration-150">{/* Ensure no whitespace */}
+                                 <TableCell className="font-medium text-foreground">{client.name}</TableCell>{/* Ensure no whitespace */}
+                                 <TableCell className="text-muted-foreground">{client.project}</TableCell>{/* Ensure no whitespace */}
+                                 <TableCell className="font-semibold">{formatCurrency(client.totalProjectCost, client.currency)}</TableCell>{/* Ensure no whitespace */}
+                                 <TableCell className="text-muted-foreground">{CURRENCIES[client.currency]}</TableCell>{/* Ensure no whitespace */}
+                                 <TableCell>
+                                      <Select
+                                         value={paymentStatus} // Use derived status
+                                         onValueChange={(newStatus) => client.id && handleClientStatusChange(client.id, newStatus as PaymentStatus)}
+                                      >
+                                         <SelectTrigger className={cn(
+                                             "w-[130px] text-xs border rounded-md py-1 px-2 focus:ring-1 focus:ring-ring focus:ring-offset-0", // Basic styling, adjust as needed
+                                              paymentStatus === 'paid' && 'text-green-800 bg-green-100 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
+                                              paymentStatus === 'partially_paid' && 'text-yellow-800 bg-yellow-100 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700',
+                                              paymentStatus === 'not_paid' && 'text-red-800 bg-red-100 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
+                                          )}>
+                                         <SelectValue placeholder="تغيير الحالة" />
+                                         </SelectTrigger>
+                                         <SelectContent>
+                                         {Object.entries(PAYMENT_STATUSES).map(([key, value]) => (
+                                             <SelectItem key={key} value={key} className="text-xs">{value}</SelectItem>
+                                         ))}
+                                         </SelectContent>
+                                     </Select>
+                                 </TableCell>{/* Ensure no whitespace */}
+                                  <TableCell className="font-semibold text-green-700 dark:text-green-400">{formatCurrency(amountPaid, client.currency)}</TableCell>{/* Ensure no whitespace */}
+                                  <TableCell className="font-semibold text-red-700 dark:text-red-400">{formatCurrency(remainingAmount, client.currency)}</TableCell>{/* Ensure no whitespace */}
+                                  <TableCell className="font-semibold text-blue-700 dark:text-blue-400">
+                                     {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
+                                      remainingAmountUSD !== null ? formatCurrency(remainingAmountUSD, 'USD') :
+                                      rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
+                                  </TableCell>{/* Ensure no whitespace */}
+                                 <TableCell className="text-muted-foreground">{formatDateAr(latestPaymentDate)}</TableCell>{/* Ensure no whitespace */}
+                                 <TableCell className="text-left space-x-1">{/* Ensure no whitespace */}
+                                    {/* Add/Edit Payment Button - Show if not fully paid or if adding form is open */}
+                                    {(paymentStatus !== 'paid' || isAddingPayment) && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                           const newClientId = client.id === addingPaymentForClientId ? null : client.id;
+                                           setAddingPaymentForClientId(newClientId);
+                                           // Reset/Pre-fill form when opening
+                                           if (newClientId) {
+                                               paymentForm.reset({
+                                                   paymentAmount: 0, // Reset to 0 for new addition
+                                                   paymentDate: new Date(),
+                                               });
+                                               // If status is 'not_paid', keep it open; otherwise, close if clicking 'Cancel'
+                                           } else if (paymentStatus === 'not_paid') {
+                                                // If closing and status is 'not_paid', optionally keep it open or handle as needed
+                                                // Current behavior: closes the form.
+                                           }
+                                        }}
+                                        className={cn(
+                                         "text-xs",
+                                         isAddingPayment ? "bg-muted text-muted-foreground" : "" // Style when form is open
+                                        )}
+                                      >
+                                        {isAddingPayment ? 'إلغاء' : (amountPaid > 0 ? 'تعديل/إضافة دفعة' : 'إضافة دفعة')}
+                                        {!isAddingPayment && <Edit className="h-3 w-3 ml-1" />} {/* Add icon when not adding */}
+                                      </Button>
+                                    )}
+                                   <Button variant="ghost" size="icon" onClick={() => client.id && deleteClient(client.id)} className="text-destructive hover:text-destructive/80 transition-colors">
+                                     <Trash2 className="h-4 w-4" />
+                                     <span className="sr-only">حذف العميل</span>
+                                   </Button>
+                                 </TableCell>
+                               </TableRow>
 
-      {/* Client Records Card */}
-      <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
-        <CardHeader className="bg-muted/50">
-          <CardTitle className="text-xl text-foreground">سجلات العملاء</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0"> {/* Remove top padding as header provides it */}
-          <Table>
-            <TableCaption className="mt-4 mb-2 text-muted-foreground">قائمة بعملائك ومشاريعهم وحالات الدفع.</TableCaption>
-            <TableHeader>
-              <TableRow>{/* Ensure no whitespace */}
-                <SortableClientHeader columnKey="name" title="اسم العميل" />{/* Ensure no whitespace */}
-                <SortableClientHeader columnKey="project" title="المشروع" />{/* Ensure no whitespace */}
-                <SortableClientHeader columnKey="totalProjectCost" title="التكلفة الإجمالية" />{/* Ensure no whitespace */}
-                 <TableHead>العملة</TableHead>{/* Ensure no whitespace */}
-                <SortableClientHeader columnKey="derivedStatus" title="حالة الدفع" />{/* Ensure no whitespace */}
-                <SortableClientHeader columnKey="derivedAmountPaid" title="المدفوع" />{/* Ensure no whitespace */}
-                <SortableClientHeader columnKey="derivedRemainingAmount" title="المتبقي" />{/* Ensure no whitespace */}
-                <TableHead>المتبقي (دولار)</TableHead>{/* Ensure no whitespace */}
-                <SortableClientHeader columnKey="derivedPaymentDate" title="تاريخ آخر دفعة" />{/* Ensure no whitespace */}
-                <TableHead className="text-left">الإجراءات</TableHead>{/* Ensure no whitespace */}
-              </TableRow>
-            </TableHeader>
-            <TableBody>{/* Ensure no whitespace */}
-              {sortedClients.length > 0 ? (
-                sortedClients.map((client) => {
-                    // Use derived values directly from sortedClients
-                    const { derivedStatus: paymentStatus, derivedAmountPaid: amountPaid, derivedRemainingAmount: remainingAmount, derivedPaymentDate: latestPaymentDate } = client;
-                    const remainingAmountUSD = convertToUSD(remainingAmount, client.currency);
-                    const isAddingPayment = addingPaymentForClientId === client.id;
+                                {/* Payment Form Row - Conditionally Rendered */}
+                                 {isAddingPayment && (
+                                     <TableRow className="bg-muted/10 border-t border-dashed">
+                                         <TableCell colSpan={10} className="p-4">
+                                             <Form {...paymentForm}>
+                                                 <form
+                                                     onSubmit={paymentForm.handleSubmit(onPaymentSubmit(client.id!, client.currency))}
+                                                     className="flex flex-col sm:flex-row items-start sm:items-end gap-4"
+                                                 >
+                                                     <FormField
+                                                         control={paymentForm.control}
+                                                         name="paymentAmount"
+                                                         render={({ field }) => (
+                                                             <FormItem className="flex-1">
+                                                                 <FormLabel>مبلغ الدفعة ({client.currency})</FormLabel>
+                                                                 <FormControl>
+                                                                     <Input
+                                                                         type="number"
+                                                                         placeholder="أدخل المبلغ"
+                                                                         {...field}
+                                                                         step="0.01"
+                                                                         className="bg-background"
+                                                                         max={remainingAmount} // Limit input to remaining amount
+                                                                     />
+                                                                 </FormControl>
+                                                                  <FormDescription className="text-xs text-yellow-600 dark:text-yellow-400 pt-1 font-medium">
+                                                                       المبلغ المتبقي للمشروع: {formatCurrency(remainingAmount, client.currency)}
+                                                                 </FormDescription>
+                                                                 <FormMessage />
+                                                             </FormItem>
+                                                         )}
+                                                     />
+                                                     <FormField
+                                                         control={paymentForm.control}
+                                                         name="paymentDate"
+                                                         render={({ field }) => (
+                                                             <FormItem className="flex flex-col">
+                                                                 <FormLabel className="mb-1">تاريخ الدفعة</FormLabel> {/* Adjusted margin */}
+                                                                 <Popover>
+                                                                     <PopoverTrigger asChild>
+                                                                         <FormControl>
+                                                                             <Button
+                                                                                 variant={'outline'}
+                                                                                 className={cn(
+                                                                                     'w-[200px] sm:w-[240px] pr-3 text-right font-normal justify-between bg-background', // Adjusted width and alignment
+                                                                                     !field.value && 'text-muted-foreground'
+                                                                                 )}
+                                                                             >
+                                                                                 {field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}
+                                                                                 <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                                                             </Button>
+                                                                         </FormControl>
+                                                                     </PopoverTrigger>
+                                                                     <PopoverContent className="w-auto p-0" align="start">
+                                                                         <Calendar
+                                                                             mode="single"
+                                                                             selected={field.value}
+                                                                             onSelect={field.onChange}
+                                                                             disabled={(date) => date > new Date() || date < new Date('1900-01-01')}
+                                                                             initialFocus
+                                                                             locale={arSA}
+                                                                         />
+                                                                     </PopoverContent>
+                                                                 </Popover>
+                                                                 <FormMessage />
+                                                             </FormItem>
+                                                         )}
+                                                     />
+                                                     <Button type="submit" size="sm" className="bg-green-600 hover:bg-green-700 text-white">
+                                                         تأكيد الدفعة
+                                                     </Button>
+                                                 </form>
+                                             </Form>
+                                               {/* Display individual payments */}
+                                              <div className="mt-4 pt-4 border-t">
+                                                  <h4 className="text-sm font-medium mb-2">سجل الدفعات:</h4>
+                                                  {payments.filter(p => p.clientId === client.id).length > 0 ? (
+                                                      <ul className="list-disc pl-5 space-y-1 text-xs text-muted-foreground">
+                                                          {payments
+                                                              .filter(p => p.clientId === client.id)
+                                                              .sort((a, b) => b.paymentDate.getTime() - a.paymentDate.getTime()) // Show newest first
+                                                              .map(p => (
+                                                                  <li key={p.id} className="flex justify-between items-center">
+                                                                      <span>{formatCurrency(p.amount, p.currency)} - {formatDateAr(p.paymentDate)}</span>
+                                                                      <Button variant="ghost" size="icon" onClick={() => deletePayment(p.id)} className="text-destructive hover:text-destructive/80 h-6 w-6">
+                                                                          <Trash2 className="h-3 w-3" />
+                                                                          <span className="sr-only">حذف الدفعة</span>
+                                                                      </Button>
+                                                                  </li>
+                                                              ))}
+                                                      </ul>
+                                                  ) : (
+                                                      <p className="text-xs text-muted-foreground">لا توجد دفعات مسجلة لهذا العميل.</p>
+                                                  )}
+                                              </div>
+                                         </TableCell>
+                                     </TableRow>
+                                 )}
+                               </React.Fragment>
+                             );
+                         })
+                       ) : (
+                         <TableRow>
+                           <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                             لم تتم إضافة عملاء بعد. ابدأ بإضافة عميل جديد باستخدام النموذج أعلاه.
+                           </TableCell>
+                         </TableRow>
+                       )}
+                     </TableBody>{/* Ensure no whitespace */}
+                      <TableFooter className="bg-muted/30">
+                         <TableRow>
+                           <TableCell colSpan={7} className="font-semibold text-right text-foreground">الإجمالي المتبقي (بالدولار الأمريكي)</TableCell>
+                           <TableCell className="font-bold text-red-700 dark:text-red-400">
+                             {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
+                              totalRemainingUSD !== null ? formatCurrency(totalRemainingUSD, 'USD') :
+                              rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
+                           </TableCell>
+                            <TableCell colSpan={2}></TableCell>
+                         </TableRow>
+                          <TableRow>
+                           <TableCell colSpan={7} className="font-semibold text-right text-foreground">إجمالي المدفوع (بالدولار الأمريكي)</TableCell>
+                           <TableCell className="font-bold text-green-700 dark:text-green-400">
+                             {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
+                              totalPaidUSD !== null ? formatCurrency(totalPaidUSD, 'USD') :
+                              rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
+                           </TableCell>
+                            <TableCell colSpan={2}></TableCell>
+                         </TableRow>
+                       </TableFooter>
+                   </Table>
+                 </CardContent>
+               </Card>
+            </TabsContent>
 
-                    return (
-                      <React.Fragment key={client.id}> {/* Use Fragment to wrap row and potential form */}
-                      <TableRow className="hover:bg-muted/30 transition-colors duration-150">{/* Ensure no whitespace */}
-                        <TableCell className="font-medium text-foreground">{client.name}</TableCell>{/* Ensure no whitespace */}
-                        <TableCell className="text-muted-foreground">{client.project}</TableCell>{/* Ensure no whitespace */}
-                        <TableCell className="font-semibold">{formatCurrency(client.totalProjectCost, client.currency)}</TableCell>{/* Ensure no whitespace */}
-                        <TableCell className="text-muted-foreground">{CURRENCIES[client.currency]}</TableCell>{/* Ensure no whitespace */}
-                        <TableCell>
-                             <Select
-                                value={paymentStatus} // Use derived status
-                                onValueChange={(newStatus) => client.id && handleClientStatusChange(client.id, newStatus as PaymentStatus)}
-                             >
-                                <SelectTrigger className={cn(
-                                    "w-[130px] text-xs border rounded-md py-1 px-2 focus:ring-1 focus:ring-ring focus:ring-offset-0", // Basic styling, adjust as needed
-                                     paymentStatus === 'paid' && 'text-green-800 bg-green-100 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
-                                     paymentStatus === 'partially_paid' && 'text-yellow-800 bg-yellow-100 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700',
-                                     paymentStatus === 'not_paid' && 'text-red-800 bg-red-100 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
-                                 )}>
-                                <SelectValue placeholder="تغيير الحالة" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                {Object.entries(PAYMENT_STATUSES).map(([key, value]) => (
-                                    <SelectItem key={key} value={key} className="text-xs">{value}</SelectItem>
-                                ))}
-                                </SelectContent>
-                            </Select>
-                        </TableCell>{/* Ensure no whitespace */}
-                         <TableCell className="font-semibold text-green-700 dark:text-green-400">{formatCurrency(amountPaid, client.currency)}</TableCell>{/* Ensure no whitespace */}
-                         <TableCell className="font-semibold text-red-700 dark:text-red-400">{formatCurrency(remainingAmount, client.currency)}</TableCell>{/* Ensure no whitespace */}
-                         <TableCell className="font-semibold text-blue-700 dark:text-blue-400">
-                            {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
-                             remainingAmountUSD !== null ? formatCurrency(remainingAmountUSD, 'USD') :
-                             rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
-                         </TableCell>{/* Ensure no whitespace */}
-                        <TableCell className="text-muted-foreground">{formatDateAr(latestPaymentDate)}</TableCell>{/* Ensure no whitespace */}
-                        <TableCell className="text-left space-x-1">{/* Ensure no whitespace */}
-                           {/* Add/Edit Payment Button - Show if not fully paid or if adding form is open */}
-                           {(paymentStatus !== 'paid' || isAddingPayment) && (
-                             <Button
-                               variant="outline"
-                               size="sm"
-                               onClick={() => {
-                                  const newClientId = client.id === addingPaymentForClientId ? null : client.id;
-                                  setAddingPaymentForClientId(newClientId);
-                                  // Reset/Pre-fill form when opening
-                                  if (newClientId) {
-                                      paymentForm.reset({
-                                          paymentAmount: 0, // Reset to 0 for new addition
-                                          paymentDate: new Date(),
-                                      });
-                                      // If status is 'not_paid', keep it open; otherwise, close if clicking 'Cancel'
-                                  } else if (paymentStatus === 'not_paid') {
-                                       // If closing and status is 'not_paid', optionally keep it open or handle as needed
-                                       // Current behavior: closes the form.
-                                  }
-                               }}
-                               className={cn(
-                                "text-xs",
-                                isAddingPayment ? "bg-muted text-muted-foreground" : "" // Style when form is open
-                               )}
-                             >
-                               {isAddingPayment ? 'إلغاء' : (amountPaid > 0 ? 'تعديل/إضافة دفعة' : 'إضافة دفعة')}
-                               {!isAddingPayment && <Edit className="h-3 w-3 ml-1" />} {/* Add icon when not adding */}
-                             </Button>
-                           )}
-                          <Button variant="ghost" size="icon" onClick={() => client.id && deleteClient(client.id)} className="text-destructive hover:text-destructive/80 transition-colors">
-                            <Trash2 className="h-4 w-4" />
-                            <span className="sr-only">حذف العميل</span>
-                          </Button>
-                        </TableCell>
-                      </TableRow>
+            {/* Debts Tab Content */}
+            <TabsContent value="debts">
+                {/* Debt Form Card */}
+                <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
+                    <CardHeader className="bg-muted/50">
+                        <CardTitle className="text-xl text-foreground">إضافة دين جديد</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                        <Form {...debtForm}>
+                            <form onSubmit={debtForm.handleSubmit(onDebtSubmit)} className="space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <FormField
+                                        control={debtForm.control}
+                                        name="description"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel className="text-foreground">وصف الدين</FormLabel>
+                                                <FormControl>
+                                                    <Input placeholder="أدخل وصفًا للدين" {...field} className="bg-background"/>
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={debtForm.control}
+                                        name="debtorName"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel className="text-foreground">اسم المدين</FormLabel>
+                                                <FormControl>
+                                                    <Input placeholder="اسم الشخص أو الجهة المدينة" {...field} className="bg-background"/>
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={debtForm.control}
+                                        name="creditorName"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel className="text-foreground">اسم الدائن</FormLabel>
+                                                <FormControl>
+                                                    <Input placeholder="اسم الشخص أو الجهة الدائنة" {...field} className="bg-background"/>
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={debtForm.control}
+                                        name="amount"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel className="text-foreground">المبلغ الإجمالي للدين</FormLabel>
+                                                <FormControl>
+                                                    <Input type="number" placeholder="أدخل المبلغ" {...field} step="0.01" className="bg-background"/>
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                     <FormField
+                                        control={debtForm.control}
+                                        name="currency"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                            <FormLabel className="text-foreground">العملة</FormLabel>
+                                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                                <FormControl>
+                                                <SelectTrigger className="bg-background">
+                                                    <SelectValue placeholder="اختر العملة" />
+                                                </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                {Object.entries(CURRENCIES).map(([code, name]) => (
+                                                    <SelectItem key={code} value={code}>{name} ({code})</SelectItem>
+                                                ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FormMessage />
+                                            </FormItem>
+                                        )}
+                                     />
+                                     <FormField
+                                        control={debtForm.control}
+                                        name="dueDate"
+                                        render={({ field }) => (
+                                            <FormItem className="flex flex-col">
+                                            <FormLabel className="mb-2 text-foreground">تاريخ الاستحقاق</FormLabel>
+                                            <Popover>
+                                                <PopoverTrigger asChild>
+                                                <FormControl>
+                                                    <Button
+                                                    variant={'outline'}
+                                                    className={cn(
+                                                        'w-full pr-3 text-right font-normal justify-between bg-background',
+                                                        !field.value && 'text-muted-foreground'
+                                                    )}
+                                                    >
+                                                    {field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}
+                                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                                    </Button>
+                                                </FormControl>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-auto p-0" align="start">
+                                                <Calendar
+                                                    mode="single"
+                                                    selected={field.value}
+                                                    onSelect={field.onChange}
+                                                    initialFocus
+                                                    locale={arSA}
+                                                />
+                                                </PopoverContent>
+                                            </Popover>
+                                            <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                     <FormField
+                                        control={debtForm.control}
+                                        name="status"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                            <FormLabel className="text-foreground">حالة الدين</FormLabel>
+                                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                                <FormControl>
+                                                <SelectTrigger className="bg-background">
+                                                    <SelectValue placeholder="اختر حالة الدين" />
+                                                </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                {Object.entries(DEBT_STATUSES).map(([key, value]) => (
+                                                    <SelectItem key={key} value={key}>{value}</SelectItem>
+                                                ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
 
-                       {/* Payment Form Row - Conditionally Rendered */}
-                        {isAddingPayment && (
-                            <TableRow className="bg-muted/10 border-t border-dashed">
-                                <TableCell colSpan={10} className="p-4">
-                                    <Form {...paymentForm}>
-                                        <form
-                                            onSubmit={paymentForm.handleSubmit(onPaymentSubmit(client.id!, client.currency))}
-                                            className="flex flex-col sm:flex-row items-start sm:items-end gap-4"
-                                        >
-                                            <FormField
-                                                control={paymentForm.control}
-                                                name="paymentAmount"
+                                   {/* Conditional Fields for Debt Repayment in Main Form */}
+                                   {(debtStatus === 'paid' || debtStatus === 'partially_paid') && (
+                                        <>
+                                           <FormField
+                                                control={debtForm.control}
+                                                name="amountRepaid"
                                                 render={({ field }) => (
-                                                    <FormItem className="flex-1">
-                                                        <FormLabel>مبلغ الدفعة ({client.currency})</FormLabel>
-                                                        <FormControl>
-                                                            <Input
-                                                                type="number"
-                                                                placeholder="أدخل المبلغ"
-                                                                {...field}
-                                                                step="0.01"
-                                                                className="bg-background"
-                                                                max={remainingAmount} // Limit input to remaining amount
-                                                            />
-                                                        </FormControl>
-                                                         <FormDescription className="text-xs text-yellow-600 dark:text-yellow-400 pt-1 font-medium">
-                                                              المبلغ المتبقي للمشروع: {formatCurrency(remainingAmount, client.currency)}
-                                                        </FormDescription>
-                                                        <FormMessage />
+                                                    <FormItem>
+                                                    <FormLabel className="text-foreground">
+                                                        المبلغ المسدد حتى الآن
+                                                        {debtStatus === 'paid' && <span className='text-muted-foreground text-xs ml-1'> (يجب أن يساوي المبلغ الإجمالي)</span>}
+                                                    </FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            type="number"
+                                                            placeholder="أدخل المبلغ المسدد"
+                                                            {...field}
+                                                            step="0.01"
+                                                            className="bg-background"
+                                                            value={field.value ?? ''} // Handle undefined/null for input value
+                                                            onChange={(e) => {
+                                                                // Convert empty string or invalid number to undefined, otherwise parse float
+                                                                const value = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                                                                field.onChange(isNaN(value as number) ? undefined : value); // Pass undefined if NaN
+                                                            }}
+                                                            disabled={debtStatus === 'paid'} // Disable if fully paid in main form
+                                                         />
+                                                    </FormControl>
+                                                     {debtStatus === 'partially_paid' && debtAmountRepaid !== undefined && debtAmountRepaid !== null && debtAmount > 0 && (
+                                                         <FormDescription className="text-sm text-yellow-600 dark:text-yellow-400 pt-1 font-medium">
+                                                             المبلغ المتبقي من الدين: {formatCurrency(debtRemainingAmountInForm, debtSelectedCurrency)}
+                                                         </FormDescription>
+                                                     )}
+                                                    <FormMessage />
                                                     </FormItem>
                                                 )}
-                                            />
+                                           />
                                             <FormField
-                                                control={paymentForm.control}
-                                                name="paymentDate"
+                                                control={debtForm.control}
+                                                name="paidDate"
                                                 render={({ field }) => (
                                                     <FormItem className="flex flex-col">
-                                                        <FormLabel className="mb-1">تاريخ الدفعة</FormLabel> {/* Adjusted margin */}
-                                                        <Popover>
-                                                            <PopoverTrigger asChild>
-                                                                <FormControl>
-                                                                    <Button
-                                                                        variant={'outline'}
-                                                                        className={cn(
-                                                                            'w-[200px] sm:w-[240px] pr-3 text-right font-normal justify-between bg-background', // Adjusted width and alignment
-                                                                            !field.value && 'text-muted-foreground'
-                                                                        )}
-                                                                    >
-                                                                        {field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}
-                                                                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                                                    </Button>
-                                                                </FormControl>
-                                                            </PopoverTrigger>
-                                                            <PopoverContent className="w-auto p-0" align="start">
-                                                                <Calendar
-                                                                    mode="single"
-                                                                    selected={field.value}
-                                                                    onSelect={field.onChange}
-                                                                    disabled={(date) => date > new Date() || date < new Date('1900-01-01')}
-                                                                    initialFocus
-                                                                    locale={arSA}
-                                                                />
-                                                            </PopoverContent>
-                                                        </Popover>
-                                                        <FormMessage />
+                                                    <FormLabel className="mb-2 text-foreground">تاريخ السداد</FormLabel>
+                                                    <Popover>
+                                                        <PopoverTrigger asChild>
+                                                        <FormControl>
+                                                            <Button
+                                                            variant={'outline'}
+                                                            className={cn(
+                                                                'w-full pr-3 text-right font-normal justify-between bg-background',
+                                                                !field.value && 'text-muted-foreground'
+                                                            )}
+                                                            >
+                                                            {field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}
+                                                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                                            </Button>
+                                                        </FormControl>
+                                                        </PopoverTrigger>
+                                                        <PopoverContent className="w-auto p-0" align="start">
+                                                        <Calendar
+                                                            mode="single"
+                                                            selected={field.value}
+                                                            onSelect={field.onChange}
+                                                            disabled={(date) => date > new Date() || date < new Date('1900-01-01')}
+                                                            initialFocus
+                                                            locale={arSA}
+                                                        />
+                                                        </PopoverContent>
+                                                    </Popover>
+                                                    <FormMessage />
                                                     </FormItem>
                                                 )}
                                             />
-                                            <Button type="submit" size="sm" className="bg-green-600 hover:bg-green-700 text-white">
-                                                تأكيد الدفعة
-                                            </Button>
-                                        </form>
-                                    </Form>
-                                      {/* Display individual payments */}
-                                     <div className="mt-4 pt-4 border-t">
-                                         <h4 className="text-sm font-medium mb-2">سجل الدفعات:</h4>
-                                         {payments.filter(p => p.clientId === client.id).length > 0 ? (
-                                             <ul className="list-disc pl-5 space-y-1 text-xs text-muted-foreground">
-                                                 {payments
-                                                     .filter(p => p.clientId === client.id)
-                                                     .sort((a, b) => b.paymentDate.getTime() - a.paymentDate.getTime()) // Show newest first
-                                                     .map(p => (
-                                                         <li key={p.id} className="flex justify-between items-center">
-                                                             <span>{formatCurrency(p.amount, p.currency)} - {formatDateAr(p.paymentDate)}</span>
-                                                             <Button variant="ghost" size="icon" onClick={() => deletePayment(p.id)} className="text-destructive hover:text-destructive/80 h-6 w-6">
-                                                                 <Trash2 className="h-3 w-3" />
-                                                                 <span className="sr-only">حذف الدفعة</span>
-                                                             </Button>
-                                                         </li>
-                                                     ))}
-                                             </ul>
-                                         ) : (
-                                             <p className="text-xs text-muted-foreground">لا توجد دفعات مسجلة لهذا العميل.</p>
-                                         )}
-                                     </div>
-                                </TableCell>
-                            </TableRow>
-                        )}
-                      </React.Fragment>
-                    );
-                })
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                    لم تتم إضافة عملاء بعد. ابدأ بإضافة عميل جديد باستخدام النموذج أعلاه.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-             <TableFooter className="bg-muted/30">
-                <TableRow>
-                  <TableCell colSpan={7} className="font-semibold text-right text-foreground">الإجمالي المتبقي (بالدولار الأمريكي)</TableCell>
-                  <TableCell className="font-bold text-red-700 dark:text-red-400">
-                    {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
-                     totalRemainingUSD !== null ? formatCurrency(totalRemainingUSD, 'USD') :
-                     rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
-                  </TableCell>
-                   <TableCell colSpan={2}></TableCell>
-                </TableRow>
-                 <TableRow>
-                  <TableCell colSpan={7} className="font-semibold text-right text-foreground">إجمالي المدفوع (بالدولار الأمريكي)</TableCell>
-                  <TableCell className="font-bold text-green-700 dark:text-green-400">
-                    {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
-                     totalPaidUSD !== null ? formatCurrency(totalPaidUSD, 'USD') :
-                     rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
-                  </TableCell>
-                   <TableCell colSpan={2}></TableCell>
-                </TableRow>
-              </TableFooter>
-          </Table>
-        </CardContent>
-      </Card>
+                                         </>
+                                     )}
+                                     {/* Notes field (full width) */}
+                                      <FormField
+                                          control={debtForm.control}
+                                          name="notes"
+                                          render={({ field }) => (
+                                              <FormItem className="md:col-span-2"> {/* Span across 2 columns on medium screens */}
+                                                  <FormLabel className="text-foreground">ملاحظات</FormLabel>
+                                                  <FormControl>
+                                                      <Textarea placeholder="أضف أي ملاحظات إضافية هنا..." {...field} className="bg-background"/>
+                                                  </FormControl>
+                                                  <FormMessage />
+                                              </FormItem>
+                                          )}
+                                      />
+                                </div>
+                                <Button type="submit" className="mt-6 w-full md:w-auto bg-accent text-accent-foreground hover:bg-accent/90 transition duration-150 ease-in-out">إضافة دين</Button>
+                            </form>
+                        </Form>
+                    </CardContent>
+                </Card>
 
-      {/* Debt Records Card */}
-      <Card className="shadow-lg border border-border rounded-lg overflow-hidden">
-          <CardHeader className="bg-muted/50">
-              <CardTitle className="text-xl text-foreground">سجلات الديون</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-              <Table>
-                  <TableCaption className="mt-4 mb-2 text-muted-foreground">قائمة بالديون المستحقة والمدفوعة.</TableCaption>
-                  <TableHeader>
-                      <TableRow>{/* Ensure no whitespace */}
-                          <SortableDebtHeader columnKey="description" title="وصف الدين" />{/* Ensure no whitespace */}
-                          <SortableDebtHeader columnKey="debtorName" title="المدين" />{/* Ensure no whitespace */}
-                          <SortableDebtHeader columnKey="creditorName" title="الدائن" />{/* Ensure no whitespace */}
-                          <SortableDebtHeader columnKey="amount" title="المبلغ الإجمالي" />{/* Ensure no whitespace */}
-                          <TableHead>العملة</TableHead>{/* Ensure no whitespace */}
-                          <SortableDebtHeader columnKey="status" title="حالة السداد" />{/* Ensure no whitespace */}
-                          <SortableDebtHeader columnKey="amountRepaid" title="المسدد" />{/* Ensure no whitespace */}
-                          <SortableDebtHeader columnKey="remainingDebt" title="المتبقي" />{/* Ensure no whitespace */}
-                          <TableHead>المتبقي (دولار)</TableHead>{/* Ensure no whitespace */}
-                          <SortableDebtHeader columnKey="dueDate" title="تاريخ الاستحقاق" />{/* Ensure no whitespace */}
-                          <SortableDebtHeader columnKey="paidDate" title="آخر سداد" />{/* Ensure no whitespace */}
-                          <TableHead>ملاحظات</TableHead>{/* Ensure no whitespace */}
-                          <TableHead className="text-left">الإجراءات</TableHead>{/* Ensure no whitespace */}
-                      </TableRow>
-                  </TableHeader>
-                  <TableBody>{/* Ensure no whitespace */}
-                      {sortedDebts.length > 0 ? (
-                          sortedDebts.map((debt) => {
-                              const remainingDebt = calculateDebtRemainingAmount(debt);
-                              const remainingDebtUSD = convertToUSD(remainingDebt, debt.currency);
-                              const amountRepaid = debt.amountRepaid ?? 0;
-                              const isEditingRepayment = editingRepaymentForDebtId === debt.id;
+                {/* Debt Records Card */}
+                <Card className="shadow-lg border border-border rounded-lg overflow-hidden">
+                    <CardHeader className="bg-muted/50">
+                        <CardTitle className="text-xl text-foreground">سجلات الديون</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                        <Table>
+                            <TableCaption className="mt-4 mb-2 text-muted-foreground">قائمة بالديون المستحقة والمدفوعة.</TableCaption>
+                            <TableHeader>
+                                <TableRow>{/* Ensure no whitespace */}
+                                    <SortableDebtHeader columnKey="description" title="وصف الدين" />{/* Ensure no whitespace */}
+                                    <SortableDebtHeader columnKey="debtorName" title="المدين" />{/* Ensure no whitespace */}
+                                    <SortableDebtHeader columnKey="creditorName" title="الدائن" />{/* Ensure no whitespace */}
+                                    <SortableDebtHeader columnKey="amount" title="المبلغ الإجمالي" />{/* Ensure no whitespace */}
+                                    <TableHead>العملة</TableHead>{/* Ensure no whitespace */}
+                                    <SortableDebtHeader columnKey="status" title="حالة السداد" />{/* Ensure no whitespace */}
+                                    <SortableDebtHeader columnKey="amountRepaid" title="المسدد" />{/* Ensure no whitespace */}
+                                    <SortableDebtHeader columnKey="remainingDebt" title="المتبقي" />{/* Ensure no whitespace */}
+                                    <TableHead>المتبقي (دولار)</TableHead>{/* Ensure no whitespace */}
+                                    <SortableDebtHeader columnKey="dueDate" title="تاريخ الاستحقاق" />{/* Ensure no whitespace */}
+                                    <SortableDebtHeader columnKey="paidDate" title="آخر سداد" />{/* Ensure no whitespace */}
+                                    <TableHead>ملاحظات</TableHead>{/* Ensure no whitespace */}
+                                    <TableHead className="text-left">الإجراءات</TableHead>{/* Ensure no whitespace */}
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>{/* Ensure no whitespace */}
+                                {sortedDebts.length > 0 ? (
+                                    sortedDebts.map((debt) => {
+                                        const remainingDebt = calculateDebtRemainingAmount(debt);
+                                        const remainingDebtUSD = convertToUSD(remainingDebt, debt.currency);
+                                        const amountRepaid = debt.amountRepaid ?? 0;
+                                        const isEditingRepayment = editingRepaymentForDebtId === debt.id;
 
-                              return (
-                                 <React.Fragment key={debt.id}>
-                                  <TableRow className="hover:bg-muted/30 transition-colors duration-150">{/* Ensure no whitespace */}
-                                      <TableCell className="font-medium text-foreground">{debt.description}</TableCell>{/* Ensure no whitespace */}
-                                      <TableCell className="text-muted-foreground">{debt.debtorName}</TableCell>{/* Ensure no whitespace */}
-                                      <TableCell className="text-muted-foreground">{debt.creditorName}</TableCell>{/* Ensure no whitespace */}
-                                      <TableCell className="font-semibold">{formatCurrency(debt.amount, debt.currency)}</TableCell>{/* Ensure no whitespace */}
-                                      <TableCell className="text-muted-foreground">{CURRENCIES[debt.currency]}</TableCell>{/* Ensure no whitespace */}
-                                      <TableCell>
-                                          <Select
-                                              value={debt.status} // Use current status
-                                              onValueChange={(newStatus) => debt.id && updateDebtStatus(debt.id, newStatus as DebtStatus)}
-                                          >
-                                              <SelectTrigger className={cn(
-                                                  "w-[130px] text-xs border rounded-md py-1 px-2 focus:ring-1 focus:ring-ring focus:ring-offset-0",
-                                                   debt.status === 'paid' && 'text-green-800 bg-green-100 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
-                                                   debt.status === 'partially_paid' && 'text-yellow-800 bg-yellow-100 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700',
-                                                   debt.status === 'outstanding' && 'text-red-800 bg-red-100 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
-                                              )}>
-                                                  <SelectValue placeholder="تغيير الحالة" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                  {Object.entries(DEBT_STATUSES).map(([key, value]) => (
-                                                      <SelectItem key={key} value={key} className="text-xs">{value}</SelectItem>
-                                                  ))}
-                                              </SelectContent>
-                                          </Select>
-                                      </TableCell>{/* Ensure no whitespace */}
-                                      <TableCell className="font-semibold text-green-700 dark:text-green-400">{formatCurrency(amountRepaid, debt.currency)}</TableCell>{/* Ensure no whitespace */}
-                                      <TableCell className="font-semibold text-red-700 dark:text-red-400">{formatCurrency(remainingDebt, debt.currency)}</TableCell>{/* Ensure no whitespace */}
-                                      <TableCell className="font-semibold text-blue-700 dark:text-blue-400">
-                                         {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
-                                          remainingDebtUSD !== null ? formatCurrency(remainingDebtUSD, 'USD') :
-                                          rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
-                                      </TableCell>{/* Ensure no whitespace */}
-                                      <TableCell className="text-muted-foreground">{formatDateAr(debt.dueDate)}</TableCell>{/* Ensure no whitespace */}
-                                      <TableCell className="text-muted-foreground">{formatDateAr(debt.paidDate)}</TableCell>{/* Ensure no whitespace */}
-                                      <TableCell className="text-muted-foreground max-w-[150px] truncate" title={debt.notes || ''}>{debt.notes || '-'}</TableCell>{/* Ensure no whitespace */}
-                                      <TableCell className="text-left space-x-1">{/* Ensure no whitespace */}
-                                          {/* Edit Repayment Button - Show if not fully paid or if form is open */}
-                                           {(debt.status !== 'paid' || isEditingRepayment) && (
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => {
-                                                    const newDebtId = debt.id === editingRepaymentForDebtId ? null : debt.id;
-                                                    setEditingRepaymentForDebtId(newDebtId);
-                                                    // Pre-fill form when opening
-                                                    if (newDebtId) {
-                                                        repaymentForm.reset({
-                                                            amountRepaid: debt.amountRepaid ?? 0,
-                                                            paidDate: debt.paidDate || new Date(), // Default to now if no previous date
-                                                        });
-                                                    } else if (debt.status === 'outstanding') {
-                                                         // If closing and status is 'outstanding', ensure it stays closed.
-                                                    }
-                                                }}
-                                                className={cn(
-                                                    "text-xs",
-                                                    isEditingRepayment ? "bg-muted text-muted-foreground" : ""
-                                                )}
-                                            >
-                                                {isEditingRepayment ? 'إلغاء' : 'تعديل السداد'}
-                                                {!isEditingRepayment && <Edit className="h-3 w-3 ml-1" />}
-                                            </Button>
-                                            )}
-                                          <Button variant="ghost" size="icon" onClick={() => debt.id && deleteDebt(debt.id)} className="text-destructive hover:text-destructive/80 transition-colors">
-                                              <Trash2 className="h-4 w-4" />
-                                              <span className="sr-only">حذف</span>
-                                          </Button>
-                                      </TableCell>
-                                  </TableRow>
-
-                                   {/* Repayment Edit Form Row - Conditionally Rendered */}
-                                    {isEditingRepayment && (
-                                        <TableRow className="bg-muted/10 border-t border-dashed">
-                                            <TableCell colSpan={13} className="p-4"> {/* Adjust colSpan */}
-                                                <Form {...repaymentForm}>
-                                                    <form
-                                                        onSubmit={repaymentForm.handleSubmit(onRepaymentSubmit(debt.id!))}
-                                                        className="flex flex-col sm:flex-row items-start sm:items-end gap-4"
+                                        return (
+                                           <React.Fragment key={debt.id}>
+                                            <TableRow className="hover:bg-muted/30 transition-colors duration-150">{/* Ensure no whitespace */}
+                                                <TableCell className="font-medium text-foreground">{debt.description}</TableCell>{/* Ensure no whitespace */}
+                                                <TableCell className="text-muted-foreground">{debt.debtorName}</TableCell>{/* Ensure no whitespace */}
+                                                <TableCell className="text-muted-foreground">{debt.creditorName}</TableCell>{/* Ensure no whitespace */}
+                                                <TableCell className="font-semibold">{formatCurrency(debt.amount, debt.currency)}</TableCell>{/* Ensure no whitespace */}
+                                                <TableCell className="text-muted-foreground">{CURRENCIES[debt.currency]}</TableCell>{/* Ensure no whitespace */}
+                                                <TableCell>
+                                                    <Select
+                                                        value={debt.status} // Use current status
+                                                        onValueChange={(newStatus) => debt.id && updateDebtStatus(debt.id, newStatus as DebtStatus)}
                                                     >
-                                                        <FormField
-                                                            control={repaymentForm.control}
-                                                            name="amountRepaid"
-                                                            render={({ field }) => (
-                                                                <FormItem className="flex-1">
-                                                                    <FormLabel>المبلغ المسدد ({debt.currency})</FormLabel>
-                                                                    <FormControl>
-                                                                        <Input
-                                                                            type="number"
-                                                                            placeholder="أدخل المبلغ المسدد"
-                                                                            {...field}
-                                                                            step="0.01"
-                                                                            className="bg-background"
-                                                                            max={debt.amount} // Set max value
-                                                                        />
-                                                                    </FormControl>
-                                                                     <FormDescription className="text-xs">
-                                                                         المبلغ الإجمالي للدين: {formatCurrency(debt.amount, debt.currency)}
-                                                                     </FormDescription>
-                                                                    <FormMessage />
-                                                                </FormItem>
-                                                            )}
-                                                        />
-                                                        <FormField
-                                                            control={repaymentForm.control}
-                                                            name="paidDate"
-                                                            render={({ field }) => (
-                                                                <FormItem className="flex flex-col">
-                                                                    <FormLabel className="mb-1">تاريخ آخر سداد</FormLabel>
-                                                                    <Popover>
-                                                                        <PopoverTrigger asChild>
-                                                                            <FormControl>
-                                                                                <Button
-                                                                                    variant={'outline'}
-                                                                                    className={cn(
-                                                                                        'w-[200px] sm:w-[240px] pr-3 text-right font-normal justify-between bg-background',
-                                                                                        !field.value && 'text-muted-foreground'
-                                                                                    )}
-                                                                                >
-                                                                                    {field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}
-                                                                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                                                                </Button>
-                                                                            </FormControl>
-                                                                        </PopoverTrigger>
-                                                                        <PopoverContent className="w-auto p-0" align="start">
-                                                                            <Calendar
-                                                                                mode="single"
-                                                                                selected={field.value}
-                                                                                onSelect={field.onChange}
-                                                                                disabled={(date) => date > new Date() || date < new Date('1900-01-01')}
-                                                                                initialFocus
-                                                                                locale={arSA}
-                                                                            />
-                                                                        </PopoverContent>
-                                                                    </Popover>
-                                                                    <FormMessage />
-                                                                </FormItem>
-                                                            )}
-                                                        />
-                                                        <Button type="submit" size="sm" className="bg-blue-600 hover:bg-blue-700 text-white">
-                                                            حفظ التعديل
-                                                        </Button>
-                                                    </form>
-                                                </Form>
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                  </React.Fragment>
-                              );
-                          })
-                      ) : (
-                          <TableRow>
-                              <TableCell colSpan={13} className="text-center text-muted-foreground py-8">
-                                  لم تتم إضافة ديون بعد. استخدم النموذج أعلاه لتسجيل دين جديد.
-                              </TableCell>
-                          </TableRow>
-                      )}
-                  </TableBody>
-                  <TableFooter className="bg-muted/30">
-                     <TableRow>
-                       <TableCell colSpan={8} className="font-semibold text-right text-foreground">إجمالي الديون المستحقة (بالدولار الأمريكي)</TableCell>
-                       <TableCell className="font-bold text-red-700 dark:text-red-400">
-                         {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
-                          totalOutstandingDebtUSD !== null ? formatCurrency(totalOutstandingDebtUSD, 'USD') :
-                          rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
-                       </TableCell>
-                        <TableCell colSpan={4}></TableCell>
-                     </TableRow>
-                   </TableFooter>
-              </Table>
-          </CardContent>
-      </Card>
+                                                        <SelectTrigger className={cn(
+                                                            "w-[130px] text-xs border rounded-md py-1 px-2 focus:ring-1 focus:ring-ring focus:ring-offset-0",
+                                                             debt.status === 'paid' && 'text-green-800 bg-green-100 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
+                                                             debt.status === 'partially_paid' && 'text-yellow-800 bg-yellow-100 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700',
+                                                             debt.status === 'outstanding' && 'text-red-800 bg-red-100 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
+                                                        )}>
+                                                            <SelectValue placeholder="تغيير الحالة" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {Object.entries(DEBT_STATUSES).map(([key, value]) => (
+                                                                <SelectItem key={key} value={key} className="text-xs">{value}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </TableCell>{/* Ensure no whitespace */}
+                                                <TableCell className="font-semibold text-green-700 dark:text-green-400">{formatCurrency(amountRepaid, debt.currency)}</TableCell>{/* Ensure no whitespace */}
+                                                <TableCell className="font-semibold text-red-700 dark:text-red-400">{formatCurrency(remainingDebt, debt.currency)}</TableCell>{/* Ensure no whitespace */}
+                                                <TableCell className="font-semibold text-blue-700 dark:text-blue-400">
+                                                   {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
+                                                    remainingDebtUSD !== null ? formatCurrency(remainingDebtUSD, 'USD') :
+                                                    rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
+                                                </TableCell>{/* Ensure no whitespace */}
+                                                <TableCell className="text-muted-foreground">{formatDateAr(debt.dueDate)}</TableCell>{/* Ensure no whitespace */}
+                                                <TableCell className="text-muted-foreground">{formatDateAr(debt.paidDate)}</TableCell>{/* Ensure no whitespace */}
+                                                <TableCell className="text-muted-foreground max-w-[150px] truncate" title={debt.notes || ''}>{debt.notes || '-'}</TableCell>{/* Ensure no whitespace */}
+                                                <TableCell className="text-left space-x-1">{/* Ensure no whitespace */}
+                                                    {/* Edit Repayment Button - Show if not fully paid or if form is open */}
+                                                     {(debt.status !== 'paid' || isEditingRepayment) && (
+                                                      <Button
+                                                          variant="outline"
+                                                          size="sm"
+                                                          onClick={() => {
+                                                              const newDebtId = debt.id === editingRepaymentForDebtId ? null : debt.id;
+                                                              setEditingRepaymentForDebtId(newDebtId);
+                                                              // Pre-fill form when opening
+                                                              if (newDebtId) {
+                                                                  repaymentForm.reset({
+                                                                      amountRepaid: debt.amountRepaid ?? 0,
+                                                                      paidDate: debt.paidDate || new Date(), // Default to now if no previous date
+                                                                  });
+                                                              } else if (debt.status === 'outstanding') {
+                                                                   // If closing and status is 'outstanding', ensure it stays closed.
+                                                              }
+                                                          }}
+                                                          className={cn(
+                                                              "text-xs",
+                                                              isEditingRepayment ? "bg-muted text-muted-foreground" : ""
+                                                          )}
+                                                      >
+                                                          {isEditingRepayment ? 'إلغاء' : 'تعديل السداد'}
+                                                          {!isEditingRepayment && <Edit className="h-3 w-3 ml-1" />}
+                                                      </Button>
+                                                      )}
+                                                    <Button variant="ghost" size="icon" onClick={() => debt.id && deleteDebt(debt.id)} className="text-destructive hover:text-destructive/80 transition-colors">
+                                                        <Trash2 className="h-4 w-4" />
+                                                        <span className="sr-only">حذف</span>
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
 
+                                             {/* Repayment Edit Form Row - Conditionally Rendered */}
+                                              {isEditingRepayment && (
+                                                  <TableRow className="bg-muted/10 border-t border-dashed">
+                                                      <TableCell colSpan={13} className="p-4"> {/* Adjust colSpan */}
+                                                          <Form {...repaymentForm}>
+                                                              <form
+                                                                  onSubmit={repaymentForm.handleSubmit(onRepaymentSubmit(debt.id!))}
+                                                                  className="flex flex-col sm:flex-row items-start sm:items-end gap-4"
+                                                              >
+                                                                  <FormField
+                                                                      control={repaymentForm.control}
+                                                                      name="amountRepaid"
+                                                                      render={({ field }) => (
+                                                                          <FormItem className="flex-1">
+                                                                              <FormLabel>المبلغ المسدد ({debt.currency})</FormLabel>
+                                                                              <FormControl>
+                                                                                  <Input
+                                                                                      type="number"
+                                                                                      placeholder="أدخل المبلغ المسدد"
+                                                                                      {...field}
+                                                                                      step="0.01"
+                                                                                      className="bg-background"
+                                                                                      max={debt.amount} // Set max value
+                                                                                  />
+                                                                              </FormControl>
+                                                                               <FormDescription className="text-xs">
+                                                                                   المبلغ الإجمالي للدين: {formatCurrency(debt.amount, debt.currency)}
+                                                                               </FormDescription>
+                                                                              <FormMessage />
+                                                                          </FormItem>
+                                                                      )}
+                                                                  />
+                                                                  <FormField
+                                                                      control={repaymentForm.control}
+                                                                      name="paidDate"
+                                                                      render={({ field }) => (
+                                                                          <FormItem className="flex flex-col">
+                                                                              <FormLabel className="mb-1">تاريخ آخر سداد</FormLabel>
+                                                                              <Popover>
+                                                                                  <PopoverTrigger asChild>
+                                                                                      <FormControl>
+                                                                                          <Button
+                                                                                              variant={'outline'}
+                                                                                              className={cn(
+                                                                                                  'w-[200px] sm:w-[240px] pr-3 text-right font-normal justify-between bg-background',
+                                                                                                  !field.value && 'text-muted-foreground'
+                                                                                              )}
+                                                                                          >
+                                                                                              {field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}
+                                                                                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                                                                          </Button>
+                                                                                      </FormControl>
+                                                                                  </PopoverTrigger>
+                                                                                  <PopoverContent className="w-auto p-0" align="start">
+                                                                                      <Calendar
+                                                                                          mode="single"
+                                                                                          selected={field.value}
+                                                                                          onSelect={field.onChange}
+                                                                                          disabled={(date) => date > new Date() || date < new Date('1900-01-01')}
+                                                                                          initialFocus
+                                                                                          locale={arSA}
+                                                                                      />
+                                                                                  </PopoverContent>
+                                                                              </Popover>
+                                                                              <FormMessage />
+                                                                          </FormItem>
+                                                                      )}
+                                                                  />
+                                                                  <Button type="submit" size="sm" className="bg-blue-600 hover:bg-blue-700 text-white">
+                                                                      حفظ التعديل
+                                                                  </Button>
+                                                              </form>
+                                                          </Form>
+                                                      </TableCell>
+                                                  </TableRow>
+                                              )}
+                                            </React.Fragment>
+                                        );
+                                    })
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={13} className="text-center text-muted-foreground py-8">
+                                            لم تتم إضافة ديون بعد. استخدم النموذج أعلاه لتسجيل دين جديد.
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>{/* Ensure no whitespace */}
+                            <TableFooter className="bg-muted/30">
+                               <TableRow>
+                                 <TableCell colSpan={8} className="font-semibold text-right text-foreground">إجمالي الديون المستحقة (بالدولار الأمريكي)</TableCell>
+                                 <TableCell className="font-bold text-red-700 dark:text-red-400">
+                                   {rateLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> :
+                                    totalOutstandingDebtUSD !== null ? formatCurrency(totalOutstandingDebtUSD, 'USD') :
+                                    rateError ? <span className="text-destructive text-xs" title={rateError}>خطأ</span> : '-'}
+                                 </TableCell>
+                                  <TableCell colSpan={4}></TableCell>
+                               </TableRow>
+                             </TableFooter>
+                        </Table>
+                    </CardContent>
+                </Card>
+            </TabsContent>
+        </Tabs>
     </div>
   );
 };
 
 export default ClientTracker;
+
