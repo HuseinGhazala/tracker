@@ -11,7 +11,7 @@ import type { ChartConfig } from "@/components/ui/chart"
 
 export type ChartData = {
   date: string; // Represents the day (e.g., '١ مايو', '٢ مايو') - Arabic format for display
-  total: number; // Represents cumulative total in USD for that day
+  total: number; // Represents the sum of payments in USD for that day
 }
 
 interface ClientPaymentChartProps {
@@ -20,7 +20,7 @@ interface ClientPaymentChartProps {
 
 const chartConfig = {
   total: {
-    label: "الدخل التراكمي (USD)", // Label updated to reflect cumulative USD (Arabic Label)
+    label: "الدخل اليومي (USD)", // Label updated to reflect daily USD (Arabic Label)
     color: "hsl(var(--chart-1))",
   },
 } satisfies ChartConfig
@@ -90,7 +90,7 @@ export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
                 strokeWidth={2}
                 dot={false} // Hide dots on the line for cleaner look
                 activeDot={{ r: 6, fill: "var(--color-total)" }} // Style for active dot on hover
-                connectNulls={false} // Do not connect points if there's missing data (though we generate all days)
+                connectNulls={false} // Do not connect points if there's missing data
                 isAnimationActive={true} // Enable animation
             />
           </LineChart>

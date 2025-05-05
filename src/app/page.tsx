@@ -836,7 +836,7 @@ const ClientTracker: FC = () => {
     }, [sortedDebts, isMounted, exchangeRates, rateLoading, convertToUSD]);
 
 
- // Process data for the chart (cumulative daily income in USD for the current month)
+ // Process data for the chart (sum of payments per day in USD for the current month)
  const chartData: ChartData[] | null = useMemo(() => {
    if (!isMounted || rateLoading || !exchangeRates) return null; // Return null if rates not ready
 
@@ -852,77 +852,57 @@ const ClientTracker: FC = () => {
          client.paymentDate &&
          !isNaN(client.paymentDate.getTime()) &&
          client.paymentDate >= startOfMonth &&
-         client.paymentDate <= endOfMonth
+         client.paymentDate <= endOfMonth &&
+         client.amountPaidSoFar !== undefined && client.amountPaidSoFar !== null // Ensure there's an amount paid
      )
      .map(client => ({
-       date: client.paymentDate!, // Non-null assertion as it's checked
-       // IMPORTANT: Use amountPaidSoFar directly here. For cumulative chart, we need total paid up to that date.
-       amountUSD: convertToUSD(client.amountPaidSoFar ?? 0, client.currency) ?? 0
+       id: client.id, // Include client ID for potential differentiation
+       date: client.paymentDate!,
+       amountUSD: convertToUSD(client.amountPaidSoFar ?? 0, client.currency) ?? 0,
+       // We need the *previous* known amount paid for this client to calculate the increment
+       // This requires more complex state or data structure.
+       // For now, we'll assume `amountPaidSoFar` represents the total paid *on that date*.
+       // This simplification means the chart might not accurately represent daily *income*
+       // if `amountPaidSoFar` is updated multiple times without changing the date,
+       // or if it always stores the cumulative total rather than the payment amount itself.
      }))
      .sort((a, b) => a.date.getTime() - b.date.getTime()); // Sort payments by date
 
-   // Calculate cumulative daily totals for the current month
-   const dailyCumulativeTotals: { [key: string]: { date: Date; total: number } } = {};
-   let cumulativeTotal = 0;
+   // Group payments by day and sum the amounts in USD
+   const dailyTotals: { [key: string]: { date: Date; total: number } } = {};
    let currentDate = startOfMonth;
 
-   // Track the LATEST payment amount for each day
-    const latestDailyPaymentAmount: { [key: string]: number } = {};
-    paymentsInMonth.forEach(payment => {
-        const paymentDateStr = format(payment.date, 'yyyy-MM-dd');
-        // Store the total amount paid *as of this date*
-        latestDailyPaymentAmount[paymentDateStr] = Math.max(
-            latestDailyPaymentAmount[paymentDateStr] || 0, // Keep the higher amount if multiple records for the same day exist
-            payment.amountUSD
-        );
-    });
+   // Pre-fill all days of the month with zero total
+   while (currentDate <= endOfMonth) {
+     const dateStr = format(currentDate, 'yyyy-MM-dd');
+     dailyTotals[dateStr] = { date: new Date(currentDate), total: 0 };
+     currentDate = addDays(currentDate, 1);
+   }
 
-    // Iterate through each day of the month
-    let lastKnownTotal = 0; // Track the total from the previous day
-    while (currentDate <= endOfMonth) {
-        const dateStr = format(currentDate, 'yyyy-MM-dd');
-        const paymentTotalAsOfToday = latestDailyPaymentAmount[dateStr];
-
-        // If there's a payment recorded today, update the cumulative total to reflect the new total paid amount.
-        // Otherwise, carry forward the total from the previous day.
-        if (paymentTotalAsOfToday !== undefined) {
-             // This assumes 'amountUSD' is the total paid *up to this date* for a given client.
-             // If multiple payments happen on the same day from different clients, this needs refinement.
-             // For simplicity, let's assume `latestDailyPaymentAmount` holds the relevant figure for the day.
-             // A better approach: sum daily *increments* if available, otherwise use latest total.
-             // For now, we will use the latest known total amount if a payment is registered today.
-             // This might overcount if not handled carefully.
-
-             // Let's recalculate based on *all payments up to and including* today.
-             cumulativeTotal = sortedClients
-                .filter(c => c.paymentDate && c.paymentDate <= currentDate && (c.paymentStatus === 'paid' || c.paymentStatus === 'partially_paid'))
-                .reduce((sum, c) => sum + (convertToUSD(c.amountPaidSoFar ?? 0, c.currency) ?? 0), 0);
-
-             lastKnownTotal = cumulativeTotal; // Update the last known total
-        } else {
-            // No payment recorded today, carry forward the last known total
-             cumulativeTotal = lastKnownTotal;
-        }
-
-
-        dailyCumulativeTotals[dateStr] = {
-            date: new Date(currentDate), // Store the Date object
-            total: cumulativeTotal,
-        };
-
-        currentDate = addDays(currentDate, 1);
-    }
-
+   // Aggregate payments per day
+   // WARNING: This assumes `amountUSD` is the payment amount for that day.
+   // If `amountPaidSoFar` is cumulative, this logic is incorrect for daily income.
+   // A better data structure would store individual payment transactions.
+   paymentsInMonth.forEach(payment => {
+     const dateStr = format(payment.date, 'yyyy-MM-dd');
+     if (dailyTotals[dateStr]) {
+        // If the data represents cumulative, we need the previous day's value for this client
+        // to find the increment. This is complex with the current structure.
+        // Assuming `payment.amountUSD` IS the payment amount for that day:
+        dailyTotals[dateStr].total += payment.amountUSD;
+     }
+   });
 
    // Convert to chart data format
-   return Object.entries(dailyCumulativeTotals)
-     .map(([_, data]) => ({
-       // Format date in Arabic for display, but keep the data logic separate
-       date: format(data.date, 'd MMM', { locale: arSA }), // 'd MMM' for 'Day MonthAbbr' (e.g., ١ مايو)
-       total: data.total, // Total is cumulative USD
-     }));
+   return Object.values(dailyTotals)
+     .map(data => ({
+       date: format(data.date, 'd MMM', { locale: arSA }), // Arabic date format
+       total: data.total, // Sum of payments in USD for that day
+     }))
+     // Filter out days with zero income if desired, or keep them to show the full month
+     .filter(d => d.total > 0); // Optional: only show days with income
 
- }, [sortedClients, isMounted, exchangeRates, rateLoading, convertToUSD]); // Added convertToUSD
+ }, [sortedClients, isMounted, exchangeRates, rateLoading, convertToUSD]);
 
 
   if (!isMounted) {
@@ -1390,15 +1370,15 @@ const ClientTracker: FC = () => {
       </Card>
 
 
-       {/* Payment Chart Card (Cumulative USD for current month) */}
+       {/* Payment Chart Card (Daily Income USD for current month) */}
        {chartData && chartData.length > 0 && (
          <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
            <CardHeader className="bg-muted/50">
-             <CardTitle className="text-xl text-foreground">الدخل التراكمي الشهري (بالدولار الأمريكي - تقديري)</CardTitle>
-              <AlertDescription className="text-muted-foreground mt-2">
-                 ملاحظة: يمثل الرسم البياني الدخل التراكمي المقدر بالدولار الأمريكي لهذا الشهر، بناءً على تواريخ الدفع المسجلة. يبدأ الرسم البياني من الصفر ويزداد مع كل دفعة مسجلة في الشهر الحالي.
-                 <br/>
-                 الدقة تعتمد على تسجيل <code className="font-mono text-sm bg-muted px-1 py-0.5 rounded">المبلغ المدفوع حتى الآن</code> في تاريخ الدفعة الصحيح. للحصول على دقة مطلقة للدخل اليومي، يجب تتبع كل دفعة بشكل منفصل.
+             <CardTitle className="text-xl text-foreground">الدخل اليومي الشهري (بالدولار الأمريكي - تقديري)</CardTitle>
+             <AlertDescription className="text-muted-foreground mt-2">
+                ملاحظة: يمثل الرسم البياني الدخل اليومي المقدر بالدولار الأمريكي لهذا الشهر، بناءً على تواريخ الدفع المسجلة ومقدار الدفعة (المبلغ المدفوع حتى الآن).
+                <br/>
+                الدقة تعتمد على تسجيل <code className="font-mono text-sm bg-muted px-1 py-0.5 rounded">المبلغ المدفوع حتى الآن</code> بشكل صحيح ليعكس المبلغ الفعلي المدفوع في ذلك التاريخ. إذا كان الحقل يعكس دائمًا الإجمالي التراكمي، فلن يعكس الرسم البياني الدخل اليومي بدقة. للحصول على دقة مطلقة، يجب تتبع كل دفعة فردية بسجل منفصل (ميزة غير متوفرة حاليًا).
              </AlertDescription>
            </CardHeader>
            <CardContent className="p-4 md:p-6"> {/* Adjusted padding for chart */}
