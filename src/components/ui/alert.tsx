@@ -36,15 +36,19 @@ Alert.displayName = "Alert"
 const AlertTitle = React.forwardRef<
   HTMLParagraphElement,
   React.HTMLAttributes<HTMLHeadingElement>
->(({ className, ...props }, ref) => (
-  // Ensure AlertTitle can render children passed to it (like icons)
-  <h5
+>(({ className, children, ...props }, ref) => (
+  // Use a div to wrap children, allowing svg and text to coexist with flex alignment
+  <div
     ref={ref}
-    className={cn("mb-1 font-medium leading-none tracking-tight flex items-center gap-2", className)}
+    className={cn("flex items-center gap-2 mb-1 font-medium leading-none tracking-tight", className)}
     {...props}
-  />
+  >
+      {/* Render children directly (could be text or icon) */}
+      {children}
+  </div>
 ))
 AlertTitle.displayName = "AlertTitle"
+
 
 const AlertDescription = React.forwardRef<
   HTMLParagraphElement,
@@ -59,5 +63,3 @@ const AlertDescription = React.forwardRef<
 AlertDescription.displayName = "AlertDescription"
 
 export { Alert, AlertTitle, AlertDescription }
-
-    
