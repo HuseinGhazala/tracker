@@ -7,9 +7,9 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'; // Ad
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { format, startOfMonth as dateFnsStartOfMonth, endOfMonth as dateFnsEndOfMonth, addDays } from 'date-fns'; // Import date-fns functions
+import { format, startOfMonth as dateFnsStartOfMonth, endOfMonth as dateFnsEndOfMonth, addDays, endOfYear, differenceInDays } from 'date-fns'; // Import date-fns functions
 import { arSA } from 'date-fns/locale'; // Import Arabic locale for date display only
-import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle, Edit, Send } from 'lucide-react'; // Added Edit, Send icons
+import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle, Edit, Send, Coins } from 'lucide-react'; // Added Edit, Send, Coins icons
 import useEmblaCarousel from 'embla-carousel-react';
 import Autoplay from 'embla-carousel-autoplay';
 
@@ -53,7 +53,7 @@ import {
   TableCell,
   TableCaption,
 } from '@/components/ui/table';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ClientPaymentChart, type CumulativeChartData } from '@/components/client-payment-chart'; // Import chart component and new type
@@ -89,6 +89,8 @@ const CURRENCIES = {
   EUR: 'يورو',
 } as const;
 export type Currency = keyof typeof CURRENCIES; // Export Currency type
+
+const ZAKAT_RATE = 0.025; // 2.5%
 
 // ----- SCHEMA DEFINITIONS -----
 
@@ -192,6 +194,12 @@ const repaymentFormSchema = z.object({
     paidDate: z.date({ required_error: 'تاريخ آخر سداد مطلوب.' }),
 });
 type RepaymentFormData = z.infer<typeof repaymentFormSchema>;
+
+// Schema for sending email report
+const emailReportFormSchema = z.object({
+  recipientEmail: z.string().email({ message: 'الرجاء إدخال عنوان بريد إلكتروني صحيح.' }),
+});
+type EmailReportFormData = z.infer<typeof emailReportFormSchema>;
 
 
 // Local storage keys
@@ -325,24 +333,18 @@ const ClientTracker: FC = () => {
   const [isSendingReport, setIsSendingReport] = useState(false);
 
   // Effect to show toasts after render (avoids set state during render)
-  const toastQueueRef = useRef<Parameters<typeof toast>[]>([]); // Use ref to avoid state dependency
-
-  // Trigger state for processing toast queue
-  const [toastProcessTrigger, setToastProcessTrigger] = useState(0);
+  const toastQueueRef = useRef<Parameters<typeof toast>[]>([]);
 
   const showToast = useCallback((props: Parameters<typeof toast>[0]) => {
       toastQueueRef.current.push([props]);
       // Use timeout to ensure state update happens after current render cycle
-      setTimeout(() => setToastProcessTrigger(c => c + 1), 0);
-  }, []); // Dependency on setToastProcessTrigger if it were a state setter from useState
-
-  // Process the toast queue when the trigger changes
-  useEffect(() => {
-    if (toastQueueRef.current.length > 0) {
-      const [toastProps] = toastQueueRef.current.shift()!;
-      toast(toastProps);
-    }
-  }, [toastProcessTrigger, toast]); // Depend on the trigger and the toast function
+      setTimeout(() => {
+          if (toastQueueRef.current.length > 0) {
+            const [toastProps] = toastQueueRef.current.shift()!;
+            toast(toastProps);
+          }
+      }, 0);
+  }, [toast]);
 
 
   // Fetch exchange rates on mount
@@ -555,6 +557,14 @@ const ClientTracker: FC = () => {
   const repaymentForm = useForm<RepaymentFormData>({
       resolver: zodResolver(repaymentFormSchema),
       // Default values will be set when the form is opened
+  });
+
+  // Email Report Form
+  const emailReportForm = useForm<EmailReportFormData>({
+    resolver: zodResolver(emailReportFormSchema),
+    defaultValues: {
+      recipientEmail: 'husseinghazala39@gmail.com', // Default recipient
+    },
   });
 
   // Watch debt form fields
@@ -817,76 +827,68 @@ const ClientTracker: FC = () => {
         const totalPaid = calculateTotalPaid(clientId, payments);
         const currentStatus = determinePaymentStatus(totalPaid, client.totalProjectCost);
 
-        if (newStatusTarget === currentStatus) return; // No change needed
+        if (newStatusTarget === currentStatus) {
+             // If selecting 'partially_paid' and form is not open, open it
+             if (newStatusTarget === 'partially_paid' && addingPaymentForClientId !== clientId) {
+                setAddingPaymentForClientId(clientId);
+                paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() });
+             }
+            return;
+        }
 
         let openPaymentForm = false;
         let toastTitle = '';
         let toastDescription = '';
-        let toastVariant: 'default' | 'destructive' = 'default';
+        let toastVariant: 'default' | 'destructive' | 'warning' = 'default';
 
         if (newStatusTarget === 'paid') {
             if (totalPaid < client.totalProjectCost) {
                 toastTitle = 'لا يمكن التحديث إلى "تم الدفع"';
                 toastDescription = `العميل ${client.name} لم يسدد التكلفة الإجمالية بعد. المبلغ المتبقي ${formatCurrency(client.totalProjectCost - totalPaid, client.currency)}. قم بإضافة دفعة لتغطية المبلغ المتبقي.`;
                 toastVariant = 'destructive';
-                // Do not change status, just show toast and maybe revert Select visual state if needed
             } else {
                  toastTitle = 'تم التأكيد';
                  toastDescription = `حالة ${client.name} هي بالفعل "تم الدفع".`;
-                 // No data change needed, but might need re-render if Select is uncontrolled
             }
         } else if (newStatusTarget === 'partially_paid') {
+            openPaymentForm = true; // Always open/keep open payment form for 'partially_paid'
             if (totalPaid >= client.totalProjectCost) {
                 toastTitle = 'تنبيه';
-                toastDescription = `العميل ${client.name} قام بالفعل بدفع التكلفة كاملة أو أكثر. الحالة هي "تم الدفع".`;
-                // Do not change status, just show toast
+                toastDescription = `العميل ${client.name} قام بالفعل بدفع التكلفة كاملة أو أكثر. الحالة "تم الدفع". لتسجيل دفعة إضافية أو تعديل، يمكنك ذلك، ولكن الحالة ستبقى "تم الدفع" اذا تجاوز الإجمالي.`;
+                toastVariant = 'warning';
+            } else if (totalPaid <= 0) {
+                toastTitle = 'إضافة دفعة أولى';
+                toastDescription = `لتغيير حالة ${client.name} إلى "دفع جزئي"، الرجاء إضافة أول دفعة.`;
             } else {
-                openPaymentForm = true; // Open payment form when selecting 'partially_paid'
-                if (totalPaid <= 0) {
-                    toastTitle = 'إضافة دفعة أولى';
-                    toastDescription = `حالة ${client.name} الآن "دفع جزئي". الرجاء إضافة أول دفعة.`;
-                } else {
-                    toastTitle = 'تعديل الدفعة';
-                    toastDescription = `حالة ${client.name} هي "دفع جزئي". يمكنك تعديل أو إضافة دفعة جديدة.`;
-                }
-                 // No direct data change needed here, status is derived. Form opening handles the action.
+                toastTitle = 'تعديل/إضافة دفعة';
+                toastDescription = `حالة ${client.name} هي "دفع جزئي". يمكنك تعديل الدفعات أو إضافة دفعة جديدة.`;
             }
         } else if (newStatusTarget === 'not_paid') {
             if (totalPaid > 0) {
                 toastTitle = 'لا يمكن التحديث إلى "لم يتم الدفع"';
                 toastDescription = `توجد دفعات مسجلة للعميل ${client.name}. لحذف الدفعات وتغيير الحالة، قم بحذف سجلات الدفعات الفردية أولاً.`;
                 toastVariant = 'destructive';
-                // Do not change status, just show toast
             } else {
                 toastTitle = 'تم التأكيد';
                 toastDescription = `حالة ${client.name} هي "لم يتم الدفع".`;
-                // No data change needed. Close payment form if it was open.
-                if (addingPaymentForClientId === clientId) {
-                   setAddingPaymentForClientId(null);
+                 if (addingPaymentForClientId === clientId) {
+                   setAddingPaymentForClientId(null); // Close form if changing to not_paid
                 }
             }
         }
 
-         // Show toast using showToast helper
-         showToast({ title: toastTitle, description: toastDescription, variant: toastVariant });
+         showToast({ title: toastTitle, description: toastDescription, variant: toastVariant as 'default' | 'destructive' }); // Cast variant
 
-         // Open or close the payment form *after* potential state updates from toast
          if (openPaymentForm) {
              setAddingPaymentForClientId(clientId);
              paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() });
-         } else if (newStatusTarget !== 'partially_paid' && addingPaymentForClientId === clientId) {
-             // Close form if the target status is not partially_paid and the form was open
-              setAddingPaymentForClientId(null);
          }
 
-         // Trigger re-render if the status didn't actually change data-wise but Select might need reset
-         // This ensures the Select reflects the *actual* derived status if the user tried an invalid change.
-         // The derived status calculation in useMemo will handle the correct display.
-         // A minimal state update will trigger the re-render.
+         // Trigger re-render to ensure Select reflects the derived status
          setClients(prev => [...prev]);
 
 
-   }, [clients, payments, showToast, paymentForm, addingPaymentForClientId]); // Added dependencies
+   }, [clients, payments, showToast, paymentForm, addingPaymentForClientId]);
 
 
   // Function to handle status updates triggered from the Select dropdown in Debt Table
@@ -896,8 +898,17 @@ const ClientTracker: FC = () => {
 
       const originalDebt = debts[debtIndex];
 
-      // If status is already the same, do nothing
-      if (originalDebt.status === newStatus) return;
+      if (originalDebt.status === newStatus) {
+          // If selecting 'partially_paid' and form is not open, open it
+          if (newStatus === 'partially_paid' && editingRepaymentForDebtId !== debtId) {
+              setEditingRepaymentForDebtId(debtId);
+              repaymentForm.reset({
+                  amountRepaid: originalDebt.amountRepaid ?? 0,
+                  paidDate: originalDebt.paidDate || new Date(),
+              });
+          }
+          return;
+      }
 
       let updatedDebt = { ...originalDebt, status: newStatus };
       let showRepaymentForm = false;
@@ -907,92 +918,67 @@ const ClientTracker: FC = () => {
           updatedDebt.amountRepaid = 0;
           updatedDebt.paidDate = undefined;
           toastMessage = `تم تحديث حالة الدين على "${originalDebt.debtorName}" إلى "مستحق". تم تصفير المبلغ المسدد.`;
-          // Close repayment form if open for this debt
           if (editingRepaymentForDebtId === debtId) {
                setEditingRepaymentForDebtId(null);
           }
       } else if (newStatus === 'paid') {
           updatedDebt.amountRepaid = originalDebt.amount;
-          // Set paid date to now only if it wasn't already set or if coming from outstanding/partially_paid
           if (!updatedDebt.paidDate || originalDebt.status !== 'paid') {
               updatedDebt.paidDate = new Date();
           }
           toastMessage = `تم تحديث حالة الدين على "${originalDebt.debtorName}" إلى "تم السداد".`;
-           // Close repayment form if open
            if (editingRepaymentForDebtId === debtId) {
               setEditingRepaymentForDebtId(null);
            }
       } else { // partially_paid
             toastMessage = `تم تحديث حالة الدين على "${originalDebt.debtorName}" إلى "سداد جزئي". يرجى تعديل المبلغ المسدد.`;
-            showRepaymentForm = true; // Always open form when setting to partially_paid
+            showRepaymentForm = true;
 
-           // Decide initial values for the form based on the previous state
-            let initialRepaid = 0;
-            let initialDate = new Date();
+            let initialRepaid = originalDebt.amountRepaid ?? 0;
+            let initialDate = originalDebt.paidDate || new Date();
 
-            if (originalDebt.status === 'paid') {
-                // Coming from 'paid', maybe start fresh or keep full amount? Starting fresh for clarity.
-                initialRepaid = 0;
-                 initialDate = new Date(); // Reset date too
-                 updatedDebt.amountRepaid = 0; // Update the debt record itself
-                 updatedDebt.paidDate = undefined;
-            } else { // Coming from 'outstanding'
-                 initialRepaid = originalDebt.amountRepaid ?? 0; // Keep current (likely 0)
-                 initialDate = originalDebt.paidDate || new Date(); // Use existing date or today
-                 updatedDebt.amountRepaid = initialRepaid; // Ensure debt record reflects this
-                 // Ensure date is cleared if amountRepaid is 0
-                 if (updatedDebt.amountRepaid <= 0) {
-                    updatedDebt.paidDate = undefined;
-                    initialDate = new Date(); // Reset form date if repaid is 0
-                 } else {
-                     updatedDebt.paidDate = initialDate; // Keep date if > 0
-                 }
+            if (initialRepaid <= 0) { // If amount repaid is 0 or less, ensure date is not set for debt record, but form can default to today
+                updatedDebt.paidDate = undefined;
+                initialDate = new Date(); // Default form date to today if no payment yet
+            } else {
+                 updatedDebt.paidDate = initialDate; // Keep date if > 0
             }
+            updatedDebt.amountRepaid = initialRepaid;
 
-             // Pre-fill the repayment form
+
             repaymentForm.reset({
                 amountRepaid: initialRepaid,
                 paidDate: initialDate,
             });
       }
 
-      // Validate before updating state
       const validationResult = debtSchema.safeParse(updatedDebt);
       if (!validationResult.success) {
            console.error("Validation failed during debt status update:", validationResult.error);
-           // Show toast using showToast helper
             showToast({
                title: 'خطأ في تحديث الحالة',
                description: `فشل تحديث حالة الدين. ${validationResult.error.errors?.[0]?.message || 'بيانات غير صالحة.'}`,
                variant: 'destructive',
            });
-           // Revert visual state in Select (important if uncontrolled)
-           setDebts(prev => [...prev]); // Trigger re-render
-           return; // Stop the update
+           setDebts(prev => [...prev]);
+           return;
       }
 
-      // Update state with validated data
        setDebts(prevDebts => {
            const newDebts = [...prevDebts];
            newDebts[debtIndex] = validationResult.data;
            return newDebts;
        });
 
-       // Show confirmation toast using showToast helper
         showToast({
            title: 'تم تحديث الحالة',
            description: toastMessage,
        });
 
-        // Open the repayment form if needed
         if (showRepaymentForm) {
             setEditingRepaymentForDebtId(debtId);
-            // Ensure form is pre-filled correctly (already handled by repaymentForm.reset above)
-        } else if (editingRepaymentForDebtId === debtId) {
-            // Close the form if it shouldn't be shown (e.g., moving to paid/outstanding)
-             setEditingRepaymentForDebtId(null);
         }
-  }, [debts, showToast, repaymentForm, editingRepaymentForDebtId]); // Added dependencies
+  }, [debts, showToast, repaymentForm, editingRepaymentForDebtId]);
 
 
    // Convert any currency to USD
@@ -1194,6 +1180,31 @@ const ClientTracker: FC = () => {
       }, 0);
     }, [sortedDebts, isMounted, exchangeRates, rateLoading, convertToUSD]);
 
+    // Calculate net wealth for Zakat in USD
+    const netWealthForZakatUSD = useMemo(() => {
+        if (totalPaidUSD === null || totalOutstandingDebtUSD === null) return null;
+        // Zakat is typically on net *savings/assets* after deducting immediate liabilities.
+        // Here, we simplify to total income (paid) minus total outstanding debts owed *by you*.
+        // This is a simplification; true Zakat calculation can be more complex.
+        return totalPaidUSD - totalOutstandingDebtUSD;
+    }, [totalPaidUSD, totalOutstandingDebtUSD]);
+
+    // Calculate Zakat amount in EGP
+    const zakatAmountEGP = useMemo(() => {
+        if (netWealthForZakatUSD === null || netWealthForZakatUSD <= 0 || !exchangeRates || !exchangeRates.EGP) {
+            return null; // No Zakat if net wealth is zero/negative, or rates are unavailable
+        }
+        // Convert net wealth from USD to EGP
+        const netWealthEGP = netWealthForZakatUSD * exchangeRates.EGP;
+
+        // The Nisab (minimum amount for Zakat) should be considered.
+        // For simplicity, we'll assume the net wealth exceeds Nisab.
+        // A more accurate calculation would involve fetching current gold/silver prices for Nisab.
+
+        return netWealthEGP * ZAKAT_RATE; // 2.5% of net wealth in EGP
+    }, [netWealthForZakatUSD, exchangeRates]);
+
+
 
  // ----- CHART DATA -----
 
@@ -1260,21 +1271,26 @@ const ClientTracker: FC = () => {
    if (cumulativeDataPoints.length > 0) {
        const lastDataPoint = cumulativeDataPoints[cumulativeDataPoints.length - 1];
        if (lastDataPoint.date.getTime() < endOfMonthDate.getTime()) {
-           finalChartData.push({
-               ...lastDataPoint, // Carry over the last cumulative amount
-               date: endOfMonthDate,
-               dateFormatted: format(endOfMonthDate, 'd MMM', { locale: arSA }),
-               // Mark this as a projected point or handle in tooltip
-                paymentAmountUSD: 0, // No new payment
-                clientName: '', // No specific client
-           });
+           // Only add an end-of-month point if it's different from the last actual data point
+           if (!finalChartData.find(dp => dp.date.getTime() === endOfMonthDate.getTime())) {
+               finalChartData.push({
+                   ...lastDataPoint, // Carry over the last cumulative amount
+                   date: endOfMonthDate,
+                   dateFormatted: format(endOfMonthDate, 'd MMM', { locale: arSA }),
+                   paymentAmountUSD: 0,
+                   clientName: '',
+               });
+           }
        }
    } else if (finalChartData.length === 1) { // Only the start point exists
-        finalChartData.push({
-           ...startPoint, // Carry over 0 amount
-           date: endOfMonthDate,
-           dateFormatted: format(endOfMonthDate, 'd MMM', { locale: arSA }),
-        });
+        // Ensure we don't add a duplicate end-of-month point if start is already end
+        if (startOfMonthDate.getTime() !== endOfMonthDate.getTime()) {
+            finalChartData.push({
+               ...startPoint, // Carry over 0 amount
+               date: endOfMonthDate,
+               dateFormatted: format(endOfMonthDate, 'd MMM', { locale: arSA }),
+            });
+        }
    }
 
 
@@ -1284,42 +1300,49 @@ const ClientTracker: FC = () => {
 
 
   // ----- MANUAL REPORT TRIGGER -----
-  const handleSendReportManually = useCallback(async () => {
+  const handleSendReportManually = useCallback(async (data: EmailReportFormData) => {
       setIsSendingReport(true);
       showToast({
           title: 'جاري إرسال التقرير...',
-          description: 'لحظات قليلة ويتم محاولة إرسال التقرير اليومي عبر البريد الإلكتروني.', // Updated description
+          description: `لحظات قليلة ويتم محاولة إرسال التقرير اليومي إلى ${data.recipientEmail}.`,
       });
 
+      const today = new Date();
+      const endOfYearDate = endOfYear(today);
+      const daysRemainingInYear = differenceInDays(endOfYearDate, today);
+      const htmlChart = cumulativeChartData && cumulativeChartData.length > 1 ?
+          `<p style="text-align:center; margin-top:20px;">للأسف، لا يمكن تضمين الرسم البياني مباشرة في هذا البريد الإلكتروني حاليًا.</p>` : // Placeholder for chart image
+          '<p style="text-align:center; margin-top:20px;">لا توجد بيانات كافية لعرض الرسم البياني للدخل الشهري.</p>';
+
+
       try {
-          // Prepare data needed for the report (similar to what the flow expects)
-          // Ensure Date objects are converted to strings for the flow input
           const reportInputData: DailyReportInput = {
-               clients: clients.map(c => ({ ...c })), // Pass copies of client data
+               clients: clients.map(c => ({ ...c })),
                debts: debts.map(d => ({
                    ...d,
-                   dueDate: d.dueDate.toISOString(), // Convert Date to ISO string
-                   paidDate: d.paidDate?.toISOString(), // Convert optional Date to ISO string
+                   dueDate: d.dueDate.toISOString(),
+                   paidDate: d.paidDate?.toISOString(),
                 })),
                summary: {
                    totalPaidUSD: totalPaidUSD,
                    totalRemainingUSD: totalRemainingUSD,
                    totalOutstandingDebtUSD: totalOutstandingDebtUSD,
                },
-               reportDate: new Date().toISOString(), // Convert Date to ISO string
+               reportDate: new Date().toISOString(),
+               recipientEmail: data.recipientEmail, // Pass recipient email
+               daysRemainingInYear, // Pass days remaining
+               htmlChart, // Pass HTML for chart (or placeholder)
           };
 
-          // Call the Genkit flow function directly
-          // Note: The `sendDailyReport` function itself wraps the `dailyReportFlow`
-          const result = await sendDailyReport(reportInputData); // Pass the prepared data
+          const result = await sendDailyReport(reportInputData);
 
           if (result.success) {
               showToast({
                   title: 'تم إرسال التقرير',
-                  description: `تم إرسال التقرير بنجاح إلى البريد الإلكتروني المسجل. ${result.message}`, // Updated description
+                  description: `تم إرسال التقرير بنجاح إلى ${data.recipientEmail}. ${result.message}`,
               });
           } else {
-              throw new Error(result.message); // Treat flow failure as an error
+              throw new Error(result.message);
           }
       } catch (error: any) {
           console.error("Error sending manual report:", error);
@@ -1338,13 +1361,12 @@ const ClientTracker: FC = () => {
       } finally {
           setIsSendingReport(false);
       }
-  }, [clients, debts, totalPaidUSD, totalRemainingUSD, totalOutstandingDebtUSD, showToast]);
+  }, [clients, debts, totalPaidUSD, totalRemainingUSD, totalOutstandingDebtUSD, showToast, cumulativeChartData]);
 
 
   // ----- RENDER LOGIC -----
 
   if (!isMounted) {
-    // Render a loading state or null during SSR/pre-mount
     return (
         <div className="flex items-center justify-center h-screen bg-background">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -1384,29 +1406,51 @@ const ClientTracker: FC = () => {
           {exchangeRates && !rateLoading && <ExchangeRateSlider rates={exchangeRates} />}
 
 
-        {/* Send Report Button */}
-        <div className="mb-8 text-center">
-            <Button
-                onClick={handleSendReportManually}
-                disabled={isSendingReport}
-                className="bg-teal-600 hover:bg-teal-700 text-white transition duration-150 ease-in-out"
-            >
-                {isSendingReport ? (
-                    <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        جاري الإرسال...
-                    </>
-                ) : (
-                    <>
-                        <Send className="mr-2 h-4 w-4" />
-                        إرسال التقرير اليومي الآن
-                    </>
-                )}
-            </Button>
+        {/* Send Report Form */}
+        <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
+          <CardHeader className="bg-muted/50">
+            <CardTitle className="text-xl text-foreground">إرسال التقرير اليومي عبر البريد الإلكتروني</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <Form {...emailReportForm}>
+              <form onSubmit={emailReportForm.handleSubmit(handleSendReportManually)} className="flex flex-col sm:flex-row items-end gap-4">
+                <FormField
+                  control={emailReportForm.control}
+                  name="recipientEmail"
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormLabel className="text-foreground">البريد الإلكتروني للمستلم</FormLabel>
+                      <FormControl>
+                        <Input type="email" placeholder="أدخل البريد الإلكتروني" {...field} className="bg-background"/>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button
+                    type="submit"
+                    disabled={isSendingReport}
+                    className="bg-teal-600 hover:bg-teal-700 text-white transition duration-150 ease-in-out sm:self-end" // Align button with input bottom
+                >
+                    {isSendingReport ? (
+                        <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            جاري الإرسال...
+                        </>
+                    ) : (
+                        <>
+                            <Send className="mr-2 h-4 w-4" />
+                            إرسال التقرير الآن
+                        </>
+                    )}
+                </Button>
+              </form>
+            </Form>
             <p className="text-xs text-muted-foreground mt-2">
-               اضغط لإرسال التقرير اليومي المجمع الآن إلى husseinghazala39@gmail.com. تأكد من إعداد بيانات اعتماد Gmail في ملف .env.
+               اضغط لإرسال التقرير اليومي المجمع الآن. تأكد من إعداد بيانات اعتماد Gmail في ملف .env.
             </p>
-        </div>
+          </CardContent>
+        </Card>
 
 
         {/* Tabs for Clients and Debts */}
@@ -1499,9 +1543,9 @@ const ClientTracker: FC = () => {
               <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
                  <CardHeader className="bg-muted/50">
                    <CardTitle className="text-xl text-foreground">الدخل الشهري التراكمي (بالدولار الأمريكي - تقديري)</CardTitle>
-                   <AlertDescription className="text-muted-foreground mt-2">
+                   <CardDescription className="text-muted-foreground mt-2">
                       ملاحظة: يمثل الرسم البياني إجمالي الدخل المقدر بالدولار الأمريكي المتراكم خلال هذا الشهر.
-                   </AlertDescription>
+                   </CardDescription>
                  </CardHeader>
                  <CardContent className="p-4 md:p-6">
                    {cumulativeChartData && cumulativeChartData.length > 1 ? ( // Need at least start and one data point
@@ -1552,25 +1596,24 @@ const ClientTracker: FC = () => {
                      <TableBody>
                        {sortedClients.length > 0 ? (
                          sortedClients.map((client) => {
-                             // Use derived values directly from sortedClients
                              const { derivedStatus: paymentStatus, derivedAmountPaid: amountPaid, derivedRemainingAmount: remainingAmount, derivedPaymentDate: latestPaymentDate } = client;
                              const remainingAmountUSD = convertToUSD(remainingAmount, client.currency);
                              const isAddingPayment = addingPaymentForClientId === client.id;
 
                              return (
-                               <React.Fragment key={client.id}> {/* Use Fragment to wrap row and potential form */}
-                               <TableRow className="hover:bg-muted/30 transition-colors duration-150">
+                               <React.Fragment key={client.id}>
+                                <TableRow className="hover:bg-muted/30 transition-colors duration-150">
                                  <TableCell className="font-medium text-foreground">{client.name}</TableCell>
                                  <TableCell className="text-muted-foreground">{client.project}</TableCell>
                                  <TableCell className="font-semibold">{formatCurrency(client.totalProjectCost, client.currency)}</TableCell>
                                  <TableCell className="text-muted-foreground">{CURRENCIES[client.currency]}</TableCell>
                                  <TableCell>
                                       <Select
-                                         value={paymentStatus} // Use derived status
+                                         value={paymentStatus}
                                          onValueChange={(newStatus) => client.id && handleClientStatusChange(client.id, newStatus as PaymentStatus)}
                                       >
                                          <SelectTrigger className={cn(
-                                             "w-[130px] text-xs border rounded-md py-1 px-2 focus:ring-1 focus:ring-ring focus:ring-offset-0", // Basic styling, adjust as needed
+                                             "w-[130px] text-xs border rounded-md py-1 px-2 focus:ring-1 focus:ring-ring focus:ring-offset-0",
                                               paymentStatus === 'paid' && 'text-green-800 bg-green-100 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
                                               paymentStatus === 'partially_paid' && 'text-yellow-800 bg-yellow-100 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700',
                                               paymentStatus === 'not_paid' && 'text-red-800 bg-red-100 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
@@ -1593,29 +1636,27 @@ const ClientTracker: FC = () => {
                                   </TableCell>
                                  <TableCell className="text-muted-foreground">{formatDateAr(latestPaymentDate)}</TableCell>
                                  <TableCell className="text-left space-x-1">
-                                    {/* Add/Edit Payment Button - Show if not fully paid or if adding form is open */}
-                                    {(paymentStatus !== 'paid' || isAddingPayment) && (
+                                    {(paymentStatus !== 'paid' || isAddingPayment || paymentStatus === 'partially_paid') && (
                                       <Button
                                         variant="outline"
                                         size="sm"
                                         onClick={() => {
                                            const newClientId = client.id === addingPaymentForClientId ? null : client.id;
                                            setAddingPaymentForClientId(newClientId);
-                                           // Reset/Pre-fill form when opening
                                            if (newClientId) {
                                                paymentForm.reset({
-                                                   paymentAmount: 0, // Reset to 0 for new addition
+                                                   paymentAmount: 0,
                                                    paymentDate: new Date(),
                                                });
                                            }
                                         }}
                                         className={cn(
                                          "text-xs",
-                                         isAddingPayment ? "bg-muted text-muted-foreground" : "" // Style when form is open
+                                         isAddingPayment ? "bg-muted text-muted-foreground" : ""
                                         )}
                                       >
                                         {isAddingPayment ? 'إلغاء' : (amountPaid > 0 ? 'تعديل/إضافة دفعة' : 'إضافة دفعة')}
-                                        {!isAddingPayment && <Edit className="h-3 w-3 ml-1" />} {/* Add icon when not adding */}
+                                        {!isAddingPayment && <Edit className="h-3 w-3 ml-1" />}
                                       </Button>
                                     )}
                                    <Button variant="ghost" size="icon" onClick={() => client.id && deleteClient(client.id)} className="text-destructive hover:text-destructive/80 transition-colors">
@@ -1624,8 +1665,6 @@ const ClientTracker: FC = () => {
                                    </Button>
                                  </TableCell>
                                </TableRow>
-
-                                {/* Payment Form Row - Conditionally Rendered */}
                                  {isAddingPayment && (
                                      <TableRow className="bg-muted/10 border-t border-dashed">
                                          <TableCell colSpan={10} className="p-4">
@@ -1647,7 +1686,7 @@ const ClientTracker: FC = () => {
                                                                          {...field}
                                                                          step="0.01"
                                                                          className="bg-background"
-                                                                         max={remainingAmount} // Limit input to remaining amount
+                                                                         max={remainingAmount > 0 || paymentStatus === 'paid' ? remainingAmount : undefined} // Allow exceeding if already paid, for overpayment logging if needed
                                                                      />
                                                                  </FormControl>
                                                                   <FormDescription className="text-xs text-yellow-600 dark:text-yellow-400 pt-1 font-medium">
@@ -1662,14 +1701,14 @@ const ClientTracker: FC = () => {
                                                          name="paymentDate"
                                                          render={({ field }) => (
                                                              <FormItem className="flex flex-col">
-                                                                 <FormLabel className="mb-1">تاريخ الدفعة</FormLabel> {/* Adjusted margin */}
+                                                                 <FormLabel className="mb-1">تاريخ الدفعة</FormLabel>
                                                                  <Popover>
                                                                      <PopoverTrigger asChild>
                                                                          <FormControl>
                                                                              <Button
                                                                                  variant={'outline'}
                                                                                  className={cn(
-                                                                                     'w-[200px] sm:w-[240px] pr-3 text-right font-normal justify-between bg-background', // Adjusted width and alignment
+                                                                                     'w-[200px] sm:w-[240px] pr-3 text-right font-normal justify-between bg-background',
                                                                                      !field.value && 'text-muted-foreground'
                                                                                  )}
                                                                              >
@@ -1698,14 +1737,13 @@ const ClientTracker: FC = () => {
                                                      </Button>
                                                  </form>
                                              </Form>
-                                               {/* Display individual payments */}
                                               <div className="mt-4 pt-4 border-t">
                                                   <h4 className="text-sm font-medium mb-2">سجل الدفعات:</h4>
                                                   {payments.filter(p => p.clientId === client.id).length > 0 ? (
                                                       <ul className="list-disc pl-5 space-y-1 text-xs text-muted-foreground">
                                                           {payments
                                                               .filter(p => p.clientId === client.id)
-                                                              .sort((a, b) => b.paymentDate.getTime() - a.paymentDate.getTime()) // Show newest first
+                                                              .sort((a, b) => b.paymentDate.getTime() - a.paymentDate.getTime())
                                                               .map(p => (
                                                                   <li key={p.id} className="flex justify-between items-center">
                                                                       <span>{formatCurrency(p.amount, p.currency)} - {formatDateAr(p.paymentDate)}</span>
@@ -1902,7 +1940,6 @@ const ClientTracker: FC = () => {
                                         )}
                                     />
 
-                                   {/* Conditional Fields for Debt Repayment in Main Form */}
                                    {(debtStatus === 'paid' || debtStatus === 'partially_paid') && (
                                         <>
                                            <FormField
@@ -1921,13 +1958,12 @@ const ClientTracker: FC = () => {
                                                             {...field}
                                                             step="0.01"
                                                             className="bg-background"
-                                                            value={field.value ?? ''} // Handle undefined/null for input value
+                                                            value={field.value ?? ''}
                                                             onChange={(e) => {
-                                                                // Convert empty string or invalid number to undefined, otherwise parse float
                                                                 const value = e.target.value === '' ? undefined : parseFloat(e.target.value);
-                                                                field.onChange(isNaN(value as number) ? undefined : value); // Pass undefined if NaN
+                                                                field.onChange(isNaN(value as number) ? undefined : value);
                                                             }}
-                                                            disabled={debtStatus === 'paid'} // Disable if fully paid in main form
+                                                            disabled={debtStatus === 'paid'}
                                                          />
                                                     </FormControl>
                                                      {debtStatus === 'partially_paid' && debtAmountRepaid !== undefined && debtAmountRepaid !== null && debtAmount > 0 && (
@@ -1977,12 +2013,11 @@ const ClientTracker: FC = () => {
                                             />
                                          </>
                                      )}
-                                     {/* Notes field (full width) */}
                                       <FormField
                                           control={debtForm.control}
                                           name="notes"
                                           render={({ field }) => (
-                                              <FormItem className="md:col-span-2"> {/* Span across 2 columns on medium screens */}
+                                              <FormItem className="md:col-span-2">
                                                   <FormLabel className="text-foreground">ملاحظات</FormLabel>
                                                   <FormControl>
                                                       <Textarea placeholder="أضف أي ملاحظات إضافية هنا..." {...field} className="bg-background"/>
@@ -2041,7 +2076,7 @@ const ClientTracker: FC = () => {
                                                 <TableCell className="text-muted-foreground">{CURRENCIES[debt.currency]}</TableCell>
                                                 <TableCell>
                                                     <Select
-                                                        value={debt.status} // Use current status
+                                                        value={debt.status}
                                                         onValueChange={(newStatus) => debt.id && updateDebtStatus(debt.id, newStatus as DebtStatus)}
                                                     >
                                                         <SelectTrigger className={cn(
@@ -2070,19 +2105,17 @@ const ClientTracker: FC = () => {
                                                 <TableCell className="text-muted-foreground">{formatDateAr(debt.paidDate)}</TableCell>
                                                 <TableCell className="text-muted-foreground max-w-[150px] truncate" title={debt.notes || ''}>{debt.notes || '-'}</TableCell>
                                                 <TableCell className="text-left space-x-1">
-                                                    {/* Edit Repayment Button - Show if not fully paid or if form is open */}
-                                                     {(debt.status !== 'paid' || isEditingRepayment) && (
+                                                     {(debt.status !== 'paid' || isEditingRepayment || debt.status === 'partially_paid') && (
                                                       <Button
                                                           variant="outline"
                                                           size="sm"
                                                           onClick={() => {
                                                               const newDebtId = debt.id === editingRepaymentForDebtId ? null : debt.id;
                                                               setEditingRepaymentForDebtId(newDebtId);
-                                                              // Pre-fill form when opening
                                                               if (newDebtId) {
                                                                   repaymentForm.reset({
                                                                       amountRepaid: debt.amountRepaid ?? 0,
-                                                                      paidDate: debt.paidDate || new Date(), // Default to now if no previous date
+                                                                      paidDate: debt.paidDate || new Date(),
                                                                   });
                                                               }
                                                           }}
@@ -2101,11 +2134,9 @@ const ClientTracker: FC = () => {
                                                     </Button>
                                                 </TableCell>
                                             </TableRow>
-
-                                             {/* Repayment Edit Form Row - Conditionally Rendered */}
                                               {isEditingRepayment && (
                                                   <TableRow className="bg-muted/10 border-t border-dashed">
-                                                      <TableCell colSpan={13} className="p-4"> {/* Adjust colSpan */}
+                                                      <TableCell colSpan={13} className="p-4">
                                                           <Form {...repaymentForm}>
                                                               <form
                                                                   onSubmit={repaymentForm.handleSubmit(onRepaymentSubmit(debt.id!))}
@@ -2124,7 +2155,7 @@ const ClientTracker: FC = () => {
                                                                                       {...field}
                                                                                       step="0.01"
                                                                                       className="bg-background"
-                                                                                      max={debt.amount} // Set max value
+                                                                                      max={debt.amount}
                                                                                   />
                                                                               </FormControl>
                                                                                <FormDescription className="text-xs">
@@ -2205,8 +2236,77 @@ const ClientTracker: FC = () => {
                 </Card>
             </TabsContent>
         </Tabs>
+
+        {/* Zakat Calculation Card */}
+        <Card className="mt-8 shadow-lg border border-green-200 dark:border-green-700 rounded-lg overflow-hidden bg-green-50 dark:bg-green-900/20">
+            <CardHeader className="bg-green-100 dark:bg-green-800/30">
+                <CardTitle className="text-xl text-green-800 dark:text-green-300 flex items-center">
+                    <Coins className="mr-2 h-6 w-6" />
+                    حساب زكاة المال
+                </CardTitle>
+                <CardDescription className="text-green-700 dark:text-green-400 mt-1">
+                    يتم حساب الزكاة بنسبة 2.5% من صافي الثروة (إجمالي الدخل المقبوض بالدولار الأمريكي مطروحًا منه إجمالي الديون المستحقة عليك بالدولار الأمريكي)، بعد تحويلها إلى الجنيه المصري.
+                    <br />
+                    (هذا حساب تقديري، يرجى مراجعة عالم دين مختص للتأكد من دقة الحساب واستيفاء شروط الزكاة مثل النصاب ومرور الحول).
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6">
+                {rateLoading ? (
+                    <div className="flex items-center text-muted-foreground">
+                        <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                        جاري تحميل بيانات الزكاة...
+                    </div>
+                ) : rateError || !exchangeRates || !exchangeRates.EGP ? (
+                     <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4"/>
+                        <AlertTitle>خطأ في حساب الزكاة</AlertTitle>
+                        <AlertDescription>
+                            لا يمكن حساب الزكاة حاليًا بسبب مشكلة في جلب أسعار الصرف أو عدم توفر سعر صرف الجنيه المصري.
+                        </AlertDescription>
+                    </Alert>
+                ) : netWealthForZakatUSD !== null && netWealthForZakatUSD > 0 && zakatAmountEGP !== null ? (
+                    <div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <p className="text-sm font-medium text-muted-foreground">إجمالي الدخل المقبوض (بعد تحويله للدولار):</p>
+                                <p className="text-lg font-semibold text-green-700 dark:text-green-400">{formatCurrency(totalPaidUSD, 'USD')}</p>
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium text-muted-foreground">إجمالي الديون المستحقة عليك (بعد تحويلها للدولار):</p>
+                                <p className="text-lg font-semibold text-red-700 dark:text-red-400">{formatCurrency(totalOutstandingDebtUSD, 'USD')}</p>
+                            </div>
+                        </div>
+                         <div className="mb-4">
+                            <p className="text-sm font-medium text-muted-foreground">صافي الثروة الخاضعة للزكاة (بالدولار الأمريكي):</p>
+                            <p className="text-lg font-semibold text-blue-700 dark:text-blue-400">{formatCurrency(netWealthForZakatUSD, 'USD')}</p>
+                        </div>
+                         <div className="mb-2">
+                            <p className="text-sm font-medium text-muted-foreground">سعر صرف الدولار الأمريكي مقابل الجنيه المصري حاليًا:</p>
+                            <p className="text-lg font-semibold text-foreground">1 USD = {exchangeRates.EGP.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} EGP</p>
+                        </div>
+                        <div className="border-t pt-4 mt-4">
+                            <p className="text-md font-medium text-muted-foreground">مبلغ الزكاة المستحق (بالجنيه المصري):</p>
+                            <p className="text-2xl font-bold text-primary">{formatCurrency(zakatAmountEGP, 'EGP')}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                                (يتم إخراج 25 جنيه مصري عن كل 1000 جنيه مصري من صافي الثروة)
+                            </p>
+                        </div>
+                    </div>
+                ) : (
+                    <Alert className="bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-300">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>لا توجد زكاة مستحقة حاليًا</AlertTitle>
+                        <AlertDescription>
+                            صافي الثروة (بعد خصم الديون) أقل من الصفر أو لا توجد بيانات كافية لحساب الزكاة.
+                        </AlertDescription>
+                    </Alert>
+                )}
+            </CardContent>
+        </Card>
     </div>
   );
 };
 
 export default ClientTracker;
+
+    
