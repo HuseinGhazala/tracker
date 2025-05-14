@@ -7,9 +7,9 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { format, startOfMonth as dateFnsStartOfMonth, endOfMonth as dateFnsEndOfMonth, addDays, endOfYear, differenceInDays, addMonths, subMonths, getYear, getMonth } from 'date-fns';
+import { format, startOfMonth as dateFnsStartOfMonth, endOfMonth as dateFnsEndOfMonth, addDays, endOfYear, differenceInDays, addMonths, subMonths, getYear, getMonth, parseISO } from 'date-fns';
 import { arSA, enUS } from 'date-fns/locale';
-import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle, Edit, Send, Coins, Clock, CalendarDays, PlusCircle, ListFilter, RefreshCw } from 'lucide-react';
+import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle, Edit, Send, Coins, Clock, CalendarDays, PlusCircle, ListFilter, RefreshCw, BarChartBig, Brain } from 'lucide-react';
 import useEmblaCarousel from 'embla-carousel-react';
 import Autoplay from 'embla-carousel-autoplay';
 
@@ -65,6 +65,10 @@ import { MonthNavigation } from '@/components/month-navigation';
 
 import { sendDailyReport } from '@/ai/flows/send-daily-report-flow';
 import type { DailyReportInput } from '@/ai/flows/schemas/daily-report-schemas';
+
+import { analyzeFinancials } from '@/ai/flows/analyze-financials-flow';
+import type { FinancialAnalysisInput, FinancialAnalysisOutput, MonthlySummary } from '@/ai/flows/schemas/financial-analysis-schemas';
+
 
 const PAYMENT_STATUSES = {
   paid: 'تم الدفع',
@@ -350,16 +354,24 @@ const ClientTracker: FC = () => {
 
   const [selectedDate, setSelectedDate] = useState<Date>(new Date()); // For month navigation
 
+  const [isAnalyzingFinancials, setIsAnalyzingFinancials] = useState(false);
+  const [financialAnalysisResult, setFinancialAnalysisResult] = useState<FinancialAnalysisOutput | null>(null);
+  const [financialAnalysisError, setFinancialAnalysisError] = useState<string | null>(null);
+
   const toastQueueRef = useRef<Parameters<typeof toast>[]>([]);
   const showToast = useCallback((props: Parameters<typeof toast>[0]) => {
-      if (!isMounted) { // Queue if not mounted
-        toastQueueRef.current.push([props]);
-        return;
+      // This check might be too late if toast is called during initial render before isMounted is true.
+      // Consider queueing if !isMounted.
+      if (typeof window !== 'undefined') { // Ensure this runs only on client
+          if (!isMounted) {
+            toastQueueRef.current.push([props]);
+            return;
+          }
+          toast(props);
       }
-      toast(props);
   }, [toast, isMounted]);
 
-  useEffect(() => { // Process queue on mount
+  useEffect(() => {
     if (isMounted) {
       toastQueueRef.current.forEach(args => toast(...args));
       toastQueueRef.current = [];
@@ -397,6 +409,7 @@ const ClientTracker: FC = () => {
   }, []);
 
   const loadDataFromLocalStorage = <T extends { creationDate?: Date | string }>(key: string, schema: z.ZodType<T>, dateFields: (keyof T)[] = []): T[] => {
+    if (typeof window === 'undefined') return []; // Guard for SSR
     const storedData = localStorage.getItem(key);
     if (storedData) {
         try {
@@ -436,7 +449,7 @@ const ClientTracker: FC = () => {
   };
 
   useEffect(() => {
-    setIsMounted(true);
+    setIsMounted(true); // Moved to the top of useEffect
     setClients(loadDataFromLocalStorage(CLIENT_STORAGE_KEY, clientSchema, ['creationDate']));
     setPayments(loadDataFromLocalStorage(PAYMENT_STORAGE_KEY, paymentSchema, ['paymentDate']));
     setDebts(loadDataFromLocalStorage(DEBT_STORAGE_KEY, debtSchema, ['dueDate', 'paidDate', 'creationDate']));
@@ -452,12 +465,12 @@ const ClientTracker: FC = () => {
     }
   }, []);
 
-  useEffect(() => { if (isMounted) localStorage.setItem(CLIENT_STORAGE_KEY, JSON.stringify(clients)); }, [clients, isMounted]);
-  useEffect(() => { if (isMounted) localStorage.setItem(PAYMENT_STORAGE_KEY, JSON.stringify(payments)); }, [payments, isMounted]);
-  useEffect(() => { if (isMounted) localStorage.setItem(DEBT_STORAGE_KEY, JSON.stringify(debts)); }, [debts, isMounted]);
-  useEffect(() => { if (isMounted) localStorage.setItem(APPOINTMENT_STORAGE_KEY, JSON.stringify(appointments)); }, [appointments, isMounted]);
-  useEffect(() => { if (isMounted) localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(tasks)); }, [tasks, isMounted]);
-  useEffect(() => { if (isMounted) localStorage.setItem(SELECTED_DATE_STORAGE_KEY, selectedDate.toISOString());}, [selectedDate, isMounted]);
+  useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(CLIENT_STORAGE_KEY, JSON.stringify(clients)); }, [clients, isMounted]);
+  useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(PAYMENT_STORAGE_KEY, JSON.stringify(payments)); }, [payments, isMounted]);
+  useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(DEBT_STORAGE_KEY, JSON.stringify(debts)); }, [debts, isMounted]);
+  useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(APPOINTMENT_STORAGE_KEY, JSON.stringify(appointments)); }, [appointments, isMounted]);
+  useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(tasks)); }, [tasks, isMounted]);
+  useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(SELECTED_DATE_STORAGE_KEY, selectedDate.toISOString());}, [selectedDate, isMounted]);
 
 
   const clientForm = useForm<Client>({ resolver: zodResolver(clientSchema), defaultValues: { name: '', project: '', totalProjectCost: 0, currency: 'EGP' }});
@@ -735,7 +748,7 @@ const ClientTracker: FC = () => {
   }, [showToast]);
 
   const updateTaskStatus = useCallback((id: string, status: TaskStatus) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : a));
     showToast({ title: "تم تحديث حالة المهمة" });
   }, [showToast]);
 
@@ -1054,10 +1067,10 @@ const ClientTracker: FC = () => {
 
       try {
           const reportInputData: DailyReportInput = {
-               clients: clientsForReport,
-               debts: debtsForReport.map(d => ({ ...d, dueDate: d.dueDate.toISOString(), paidDate: d.paidDate?.toISOString() })),
-               appointments: appointmentsForReport.map(a => ({ ...a, date: a.date.toISOString()})),
-               tasks: tasksForReport.map(t => ({ ...t, dueDate: t.dueDate?.toISOString()})),
+               clients: clientsForReport.map(c => ({...c, creationDate: c.creationDate?.toISOString()})),
+               debts: debtsForReport.map(d => ({ ...d, creationDate: d.creationDate?.toISOString(), dueDate: d.dueDate.toISOString(), paidDate: d.paidDate?.toISOString() })),
+               appointments: appointmentsForReport.map(a => ({ ...a, creationDate: a.creationDate?.toISOString(), date: a.date.toISOString()})),
+               tasks: tasksForReport.map(t => ({ ...t, creationDate: t.creationDate?.toISOString(), dueDate: t.dueDate?.toISOString()})),
                summary: {
                    totalPaidUSD: totalPaidUSD, // This will be for the *selectedDate* month from UI
                    totalRemainingUSD: totalRemainingUSD, // This will be for the *selectedDate* month from UI
@@ -1085,11 +1098,100 @@ const ClientTracker: FC = () => {
       } finally {
           setIsSendingReport(false);
       }
-  }, [clients, debts, appointments, tasks, totalPaidUSD, totalRemainingUSD, totalOutstandingDebtUSD, zakatAmountEGP, showToast, cumulativeChartData, payments, selectedDate]);
+  }, [clients, debts, appointments, tasks, totalPaidUSD, totalRemainingUSD, totalOutstandingDebtUSD, zakatAmountEGP, showToast, cumulativeChartData, payments, selectedDate, convertToUSD, exchangeRates]);
 
   const handleMonthChange = (newDate: Date) => {
     setSelectedDate(newDate);
   };
+
+  const prepareFinancialAnalysisInput = useCallback((): FinancialAnalysisInput | null => {
+    if (!isMounted || rateLoading || !exchangeRates || !clients.length && !payments.length) {
+        showToast({ title: "بيانات غير كافية للتحليل", description: "الرجاء إضافة بعض العملاء والدفعات أولاً أو انتظار تحميل أسعار الصرف.", variant: "destructive" });
+        return null;
+    }
+
+    const monthlyMap: { [key: string]: MonthlySummary } = {};
+
+    payments.forEach(payment => {
+        const paymentDate = new Date(payment.paymentDate);
+        const year = paymentDate.getFullYear();
+        const month = paymentDate.getMonth() + 1; // 1-indexed
+        const periodKey = `${year}-${String(month).padStart(2, '0')}`;
+
+        if (!monthlyMap[periodKey]) {
+            monthlyMap[periodKey] = {
+                year,
+                month,
+                totalIncomeUSD: 0,
+                numberOfClients: 0,
+                numberOfProjects: 0,
+            };
+        }
+
+        const incomeUSD = convertToUSD(payment.amount, payment.currency) ?? 0;
+        monthlyMap[periodKey].totalIncomeUSD += incomeUSD;
+    });
+
+    // Consolidate client and project counts
+    Object.keys(monthlyMap).forEach(periodKey => {
+        const { year, month } = monthlyMap[periodKey];
+        const clientsInMonth = new Set<string>();
+        const projectsInMonth = new Set<string>();
+
+        payments.forEach(p => {
+            const pDate = new Date(p.paymentDate);
+            if (pDate.getFullYear() === year && (pDate.getMonth() + 1) === month) {
+                clientsInMonth.add(p.clientId);
+                const clientDetails = clients.find(c => c.id === p.clientId);
+                if (clientDetails) {
+                    projectsInMonth.add(clientDetails.project);
+                }
+            }
+        });
+        monthlyMap[periodKey].numberOfClients = clientsInMonth.size;
+        monthlyMap[periodKey].numberOfProjects = projectsInMonth.size;
+    });
+
+    const allMonthlySummaries = Object.values(monthlyMap).sort((a, b) => {
+        if (a.year !== b.year) return a.year - b.year;
+        return a.month - b.month;
+    });
+
+    if (allMonthlySummaries.length === 0) {
+         showToast({ title: "لا توجد بيانات دفعات للتحليل", description: "الرجاء إضافة بعض الدفعات أولاً.", variant: "destructive" });
+         return null;
+    }
+
+    return {
+        allMonthlySummaries,
+        currentMonthFocus: {
+            year: selectedDate.getFullYear(),
+            month: selectedDate.getMonth() + 1, // 1-indexed for flow
+        },
+    };
+  }, [isMounted, rateLoading, exchangeRates, clients, payments, convertToUSD, selectedDate, showToast]);
+
+  const handleAnalyzeFinancials = useCallback(async () => {
+    const analysisInput = prepareFinancialAnalysisInput();
+    if (!analysisInput) return;
+
+    setIsAnalyzingFinancials(true);
+    setFinancialAnalysisResult(null);
+    setFinancialAnalysisError(null);
+    showToast({ title: "جاري تحليل البيانات المالية...", description: "قد يستغرق الأمر بضع لحظات." });
+
+    try {
+        const result = await analyzeFinancials(analysisInput);
+        setFinancialAnalysisResult(result);
+        showToast({ title: "اكتمل التحليل المالي", description: "تم عرض النتائج أدناه." });
+    } catch (error: any) {
+        console.error("Error analyzing financials:", error);
+        setFinancialAnalysisError(`فشل التحليل المالي: ${error.message}`);
+        showToast({ title: "خطأ في التحليل المالي", description: error.message, variant: "destructive" });
+    } finally {
+        setIsAnalyzingFinancials(false);
+    }
+  }, [prepareFinancialAnalysisInput, showToast]);
 
 
   if (!isMounted) {
@@ -1531,6 +1633,63 @@ const ClientTracker: FC = () => {
                  </div>
             </TabsContent>
         </Tabs>
+
+        <Card className="mt-8 shadow-lg border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden bg-purple-50 dark:bg-purple-900/20">
+            <CardHeader className="bg-purple-100 dark:bg-purple-800/30">
+                <CardTitle className="text-xl text-purple-800 dark:text-purple-300 flex items-center">
+                    <Brain className="mr-2 h-6 w-6" />
+                    التحليل المالي بواسطة الذكاء الاصطناعي
+                </CardTitle>
+                <CardDescription className="text-purple-700 dark:text-purple-400 mt-1">
+                    احصل على تحليل لبياناتك المالية ومقارنتها عبر الشهور بواسطة نموذج لغوي متقدم.
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6">
+                <Button onClick={handleAnalyzeFinancials} disabled={isAnalyzingFinancials || rateLoading || !exchangeRates} className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white">
+                    {isAnalyzingFinancials ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> جاري التحليل...</> : <><BarChartBig className="mr-2 h-4 w-4" /> تحليل البيانات الآن</>}
+                </Button>
+                {rateLoading && <p className="text-sm text-muted-foreground mt-2">يرجى الانتظار حتى يتم تحميل أسعار الصرف...</p>}
+                {!rateLoading && !exchangeRates && rateError && <p className="text-sm text-destructive mt-2">لا يمكن إجراء التحليل بسبب خطأ في تحميل أسعار الصرف.</p>}
+
+                {financialAnalysisResult && !isAnalyzingFinancials && (
+                    <div className="mt-6 space-y-4 text-sm">
+                        <div>
+                            <h3 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-1">التقييم العام:</h3>
+                            <p className="text-foreground whitespace-pre-wrap">{financialAnalysisResult.overallAssessment}</p>
+                        </div>
+                        <div>
+                            <h3 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-1">أداء الشهر الحالي ({format(selectedDate, "MMMM yyyy", { locale: arSA })}):</h3>
+                            <p className="text-foreground whitespace-pre-wrap">{financialAnalysisResult.currentMonthPerformance}</p>
+                        </div>
+                        <div>
+                            <h3 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-1">التحليل المقارن:</h3>
+                            <p className="text-foreground whitespace-pre-wrap">{financialAnalysisResult.comparativeAnalysis}</p>
+                        </div>
+                        <div>
+                            <h3 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-1">الاتجاهات الرئيسية:</h3>
+                            <ul className="list-disc pl-5 space-y-1 text-foreground">
+                                {financialAnalysisResult.keyTrends.map((trend, index) => <li key={index} className="whitespace-pre-wrap">{trend}</li>)}
+                            </ul>
+                        </div>
+                        {financialAnalysisResult.potentialFocusAreas && financialAnalysisResult.potentialFocusAreas.length > 0 && (
+                            <div>
+                                <h3 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-1">نقاط للتركيز عليها:</h3>
+                                <ul className="list-disc pl-5 space-y-1 text-foreground">
+                                    {financialAnalysisResult.potentialFocusAreas.map((area, index) => <li key={index} className="whitespace-pre-wrap">{area}</li>)}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+                )}
+                {financialAnalysisError && !isAnalyzingFinancials && (
+                    <Alert variant="destructive" className="mt-6">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>خطأ في التحليل</AlertTitle>
+                        <AlertDescription>{financialAnalysisError}</AlertDescription>
+                    </Alert>
+                )}
+            </CardContent>
+        </Card>
 
         <Card className="mt-8 shadow-lg border border-green-200 dark:border-green-700 rounded-lg overflow-hidden bg-green-50 dark:bg-green-900/20">
             <CardHeader className="bg-green-100 dark:bg-green-800/30">
