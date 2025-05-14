@@ -25,12 +25,12 @@ const financialAnalysisPrompt = ai.definePrompt({
   input: { schema: FinancialAnalysisInputSchema },
   output: { schema: FinancialAnalysisOutputSchema },
   prompt: `You are an expert financial analyst AI. Your task is to analyze the provided monthly financial summaries for a small business or freelancer.
-The user is currently focusing on the month: {{currentMonthFocus.year}}-{{String(currentMonthFocus.month).padStart(2,'0')}}. (Month is 1-indexed, e.g., 1 for January)
+The user is currently focusing on the month: {{currentMonthFocus.year}}-{{currentMonthFocus.month}}. (Month is 1-indexed, e.g., 1 for January). When referring to months in YYYY-MM format, please ensure the month is always represented by two digits (e.g., January as 01, February as 02, etc.).
 
 Here is the historical data available (all monetary values are in USD):
 {{#if allMonthlySummaries.length}}
 {{#each allMonthlySummaries}}
-- Year: {{this.year}}, Month: {{String(this.month).padStart(2,'0')}}
+- Year: {{this.year}}, Month: {{this.month}}
   - Total Income: {{this.totalIncomeUSD}}
   {{#if this.numberOfClients}} - Active Clients: {{this.numberOfClients}}{{else}} - Active Clients: Not specified{{/if}}
   {{#if this.numberOfProjects}} - Unique Projects (from paying clients): {{this.numberOfProjects}}{{else}} - Unique Projects: Not specified{{/if}}
@@ -47,8 +47,8 @@ Please address this context in your analysis.
 
 Based on this data, please provide a comprehensive financial analysis. Structure your response according to the following fields, ensuring all monetary values in your analysis are also in USD and clearly labeled with '$' and two decimal places (e.g., $1,234.56):
 1.  **overallAssessment**: A general assessment of the financial health and trends observed from all available data.
-2.  **currentMonthPerformance**: A specific analysis of the performance for {{currentMonthFocus.year}}-{{String(currentMonthFocus.month).padStart(2,'0')}}.
-3.  **comparativeAnalysis**: Compare {{currentMonthFocus.year}}-{{String(currentMonthFocus.month).padStart(2,'0')}} with previous periods (e.g., the immediately preceding month, the average of previous months, or the same month in the previous year if data is available). Highlight percentage changes where significant (e.g., "X% higher/lower").
+2.  **currentMonthPerformance**: A specific analysis of the performance for {{currentMonthFocus.year}}-{{currentMonthFocus.month}}.
+3.  **comparativeAnalysis**: Compare {{currentMonthFocus.year}}-{{currentMonthFocus.month}} with previous periods (e.g., the immediately preceding month, the average of previous months, or the same month in the previous year if data is available). Highlight percentage changes where significant (e.g., "X% higher/lower").
 4.  **keyTrends**: Identify and list 2-4 key financial trends. These could be patterns in income, client acquisition, project load, etc.
 5.  **potentialFocusAreas** (Optional): If applicable, suggest 1-2 areas that might need attention or could be opportunities for improvement based on the data.
 
@@ -56,16 +56,6 @@ Keep your analysis concise, clear, and data-driven. Use professional but underst
 If data is insufficient for a particular type of analysis (e.g., year-over-year comparison due to lack of data), state that clearly.
 Return the analysis in the specified JSON output format.
 `,
-  // Register a Handlebars helper for padStart
-  handlebars: {
-    helpers: {
-      String: (value: any) => String(value), // Make String constructor available
-      // padStart is tricky with Handlebars' default capabilities.
-      // It's often better to pre-format such values before sending to the prompt,
-      // or rely on the LLM to understand "Month: 1" as January.
-      // Forcing LLM: "When referring to months, use MM format e.g. January is 01"
-    }
-  }
 });
 
 const financialAnalysisFlow = ai.defineFlow(
@@ -75,10 +65,7 @@ const financialAnalysisFlow = ai.defineFlow(
     outputSchema: FinancialAnalysisOutputSchema,
   },
   async (input) => {
-    // The padStart helper might not work as expected in all Genkit Handlebars environments.
-    // LLMs are generally good at understanding "month: 1" means January for "YYYY-MM" formatting.
-    // The prompt instructs the LLM on the 1-indexed month.
-
+    // The prompt instructs the LLM on the 1-indexed month and to use MM format.
     const { output } = await financialAnalysisPrompt(input);
     if (!output) {
       throw new Error('No output from financial analysis prompt.');
@@ -86,3 +73,4 @@ const financialAnalysisFlow = ai.defineFlow(
     return output;
   }
 );
+
