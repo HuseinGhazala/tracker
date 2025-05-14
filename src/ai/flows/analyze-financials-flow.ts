@@ -24,37 +24,39 @@ const financialAnalysisPrompt = ai.definePrompt({
   name: 'financialAnalysisPrompt',
   input: { schema: FinancialAnalysisInputSchema },
   output: { schema: FinancialAnalysisOutputSchema },
-  prompt: `You are an expert financial analyst AI. Your task is to analyze the provided monthly financial summaries for a small business or freelancer.
-The user is currently focusing on the month: {{currentMonthFocus.year}}-{{currentMonthFocus.month}}. (Month is 1-indexed, e.g., 1 for January). When referring to months in YYYY-MM format, please ensure the month is always represented by two digits (e.g., January as 01, February as 02, etc.).
+  prompt: `أنت خبير تحليل مالي يعمل بالذكاء الاصطناعي. مهمتك هي تحليل ملخصات مالية شهرية مقدمة لشركة صغيرة أو مستقل.
+يركز المستخدم حاليًا على الشهر: {{currentMonthFocus.year}}-{{String(currentMonthFocus.month).padStart(2, '0')}}. (الشهر مُفهرس من 1، على سبيل المثال، 1 لشهر يناير). عند الإشارة إلى الأشهر بتنسيق YYYY-MM، يرجى التأكد دائمًا من تمثيل الشهر برقمين (على سبيل المثال، يناير كـ 01، فبراير كـ 02، إلخ).
 
-Here is the historical data available (all monetary values are in USD):
+الرجاء تقديم جميع الردود باللغة العربية الفصحى.
+
+إليك البيانات التاريخية المتاحة (جميع القيم النقدية بالدولار الأمريكي):
 {{#if allMonthlySummaries.length}}
 {{#each allMonthlySummaries}}
-- Year: {{this.year}}, Month: {{this.month}}
-  - Total Income: {{this.totalIncomeUSD}}
-  {{#if this.numberOfClients}} - Active Clients: {{this.numberOfClients}}{{else}} - Active Clients: Not specified{{/if}}
-  {{#if this.numberOfProjects}} - Unique Projects (from paying clients): {{this.numberOfProjects}}{{else}} - Unique Projects: Not specified{{/if}}
+- السنة: {{this.year}}، الشهر: {{String(this.month).padStart(2, '0')}}
+  - إجمالي الدخل: {{this.totalIncomeUSD}}
+  {{#if this.numberOfClients}} - عدد العملاء النشطين: {{this.numberOfClients}}{{else}} - عدد العملاء النشطين: غير محدد{{/if}}
+  {{#if this.numberOfProjects}} - عدد المشاريع الفريدة (من العملاء الذين دفعوا): {{this.numberOfProjects}}{{else}} - عدد المشاريع الفريدة: غير محدد{{/if}}
 {{/each}}
 {{else}}
-No historical data provided. The analysis will be limited.
+لا توجد بيانات تاريخية مقدمة. سيكون التحليل محدودًا.
 {{/if}}
 
 {{#if analysisContext}}
-The user has provided the following specific context or question for the analysis:
+قدم المستخدم السياق أو السؤال المحدد التالي للتحليل:
 "{{{analysisContext}}}"
-Please address this context in your analysis.
+يرجى معالجة هذا السياق في تحليلك.
 {{/if}}
 
-Based on this data, please provide a comprehensive financial analysis. Structure your response according to the following fields, ensuring all monetary values in your analysis are also in USD and clearly labeled with '$' and two decimal places (e.g., $1,234.56):
-1.  **overallAssessment**: A general assessment of the financial health and trends observed from all available data.
-2.  **currentMonthPerformance**: A specific analysis of the performance for {{currentMonthFocus.year}}-{{currentMonthFocus.month}}.
-3.  **comparativeAnalysis**: Compare {{currentMonthFocus.year}}-{{currentMonthFocus.month}} with previous periods (e.g., the immediately preceding month, the average of previous months, or the same month in the previous year if data is available). Highlight percentage changes where significant (e.g., "X% higher/lower").
-4.  **keyTrends**: Identify and list 2-4 key financial trends. These could be patterns in income, client acquisition, project load, etc.
-5.  **potentialFocusAreas** (Optional): If applicable, suggest 1-2 areas that might need attention or could be opportunities for improvement based on the data.
+بناءً على هذه البيانات، يرجى تقديم تحليل مالي شامل. قم بتنظيم ردك وفقًا للحقول التالية، مع التأكد من أن جميع القيم النقدية في تحليلك بالدولار الأمريكي أيضًا ومُعلمة بوضوح بـ '$' ومنزلتين عشريتين (على سبيل المثال، $1,234.56):
+1.  **overallAssessment_ar**: تقييم عام للصحة المالية والاتجاهات المرصودة من جميع البيانات المتاحة (باللغة العربية).
+2.  **currentMonthPerformance_ar**: تحليل محدد لأداء الشهر {{currentMonthFocus.year}}-{{String(currentMonthFocus.month).padStart(2, '0')}} (باللغة العربية).
+3.  **comparativeAnalysis_ar**: قارن {{currentMonthFocus.year}}-{{String(currentMonthFocus.month).padStart(2, '0')}} بالفترات السابقة (على سبيل المثال، الشهر السابق مباشرة، متوسط الأشهر السابقة، أو نفس الشهر في العام السابق إذا كانت البيانات متاحة). سلط الضوء على التغييرات المئوية حيثما كانت مهمة (على سبيل المثال، "أعلى/أقل بنسبة X%") (باللغة العربية).
+4.  **keyTrends_ar**: حدد وقائمة 2-4 اتجاهات مالية رئيسية. يمكن أن تكون هذه أنماطًا في الدخل، اكتساب العملاء، عبء المشاريع، إلخ. (قائمة بالسلاسل النصية باللغة العربية).
+5.  **potentialFocusAreas_ar** (اختياري): إذا كان ذلك ممكنًا، اقترح 1-2 مجالات قد تحتاج إلى اهتمام أو يمكن أن تكون فرصًا للتحسين بناءً على البيانات (قائمة بالسلاسل النصية باللغة العربية).
 
-Keep your analysis concise, clear, and data-driven. Use professional but understandable language.
-If data is insufficient for a particular type of analysis (e.g., year-over-year comparison due to lack of data), state that clearly.
-Return the analysis in the specified JSON output format.
+حافظ على تحليلك موجزًا وواضحًا وقائمًا على البيانات. استخدم لغة احترافية ولكن مفهومة.
+إذا كانت البيانات غير كافية لنوع معين من التحليل (على سبيل المثال، مقارنة سنوية بسبب نقص البيانات)، اذكر ذلك بوضوح.
+أرجع التحليل بتنسيق JSON المحدد باللغة العربية.
 `,
 });
 

@@ -360,9 +360,7 @@ const ClientTracker: FC = () => {
 
   const toastQueueRef = useRef<Parameters<typeof toast>[]>([]);
   const showToast = useCallback((props: Parameters<typeof toast>[0]) => {
-      // This check might be too late if toast is called during initial render before isMounted is true.
-      // Consider queueing if !isMounted.
-      if (typeof window !== 'undefined') { // Ensure this runs only on client
+      if (typeof window !== 'undefined') {
           if (!isMounted) {
             toastQueueRef.current.push([props]);
             return;
@@ -449,7 +447,7 @@ const ClientTracker: FC = () => {
   };
 
   useEffect(() => {
-    setIsMounted(true); // Moved to the top of useEffect
+    setIsMounted(true);
     setClients(loadDataFromLocalStorage(CLIENT_STORAGE_KEY, clientSchema, ['creationDate']));
     setPayments(loadDataFromLocalStorage(PAYMENT_STORAGE_KEY, paymentSchema, ['paymentDate']));
     setDebts(loadDataFromLocalStorage(DEBT_STORAGE_KEY, debtSchema, ['dueDate', 'paidDate', 'creationDate']));
@@ -678,16 +676,10 @@ const ClientTracker: FC = () => {
          showToast({ title: toastTitle, description: toastDescription, variant: toastVariant as 'default' | 'destructive' });
          if (openPaymentForm) {
              setAddingPaymentForClientId(clientId);
-             // Reset with current payment amount if partially paid, or 0 if not_paid and no payments exist
-             const initialPaymentAmount = (newStatusTarget === 'partially_paid' && totalPaid > 0) ? 0 : 0; // Let user input new amount
+             const initialPaymentAmount = (newStatusTarget === 'partially_paid' && totalPaid > 0) ? 0 : 0;
              paymentForm.reset({ paymentAmount: initialPaymentAmount, paymentDate: new Date() });
          }
-         // This direct mutation won't trigger re-render. Status is derived.
-         // We rely on the side-effects (opening form, toasts) to guide the user.
-         // To force a re-render of the status display if it were directly mutable:
-         // setClients(prev => prev.map(c => c.id === clientId ? {...c, status: newStatusTarget /* if status were direct prop */} : c));
-         // However, our status is derived, so we just need to ensure the UI reflects ability to change underlying data.
-         setClients(prev => [...prev]); // Trigger re-render to reflect addingPaymentForClientId change
+         setClients(prev => [...prev]);
    }, [clients, payments, showToast, paymentForm, addingPaymentForClientId, selectedDate]);
 
 
@@ -730,15 +722,13 @@ const ClientTracker: FC = () => {
       const validationResult = debtSchema.safeParse(updatedDebt);
       if (!validationResult.success) {
            showToast({ title: 'خطأ في تحديث الحالة', description: `فشل التحديث. ${validationResult.error.errors?.[0]?.message}`, variant: 'destructive' });
-           // No actual state change if validation fails before user input
-           // setDebts(prev => [...prev]); // To refresh if there was a visual pre-change
            return;
       }
        setDebts(prev => { const newDebts = [...prev]; newDebts[debtIndex] = validationResult.data; return newDebts; });
         showToast({ title: 'تم تحديث الحالة', description: toastMessage, variant: toastVariant });
         if (showRepaymentForm) setEditingRepaymentForDebtId(debtId);
         else if (editingRepaymentForDebtId === debtId && !showRepaymentForm) {
-            setEditingRepaymentForDebtId(null); // Close form if status change logic closes it
+            setEditingRepaymentForDebtId(null);
         }
   }, [debts, showToast, repaymentForm, editingRepaymentForDebtId]);
 
@@ -780,7 +770,6 @@ const ClientTracker: FC = () => {
 
   const handleResetClientTable = useCallback(() => {
     setClientSortConfig({ key: null, direction: 'ascending' });
-    // Potentially reset filters if implemented
     showToast({ title: 'تم إعادة تعيين جدول العملاء', description: 'تمت إزالة الفرز والتصفية.' });
   }, [showToast]);
 
@@ -788,7 +777,7 @@ const ClientTracker: FC = () => {
   const filteredClients = useMemo(() => {
     if (!isMounted) return [];
     return clients.filter(client => {
-        const clientCreationDate = client.creationDate ? new Date(client.creationDate) : new Date(0); // Default to epoch if no date
+        const clientCreationDate = client.creationDate ? new Date(client.creationDate) : new Date(0);
         return clientCreationDate.getFullYear() === selectedDate.getFullYear() &&
                clientCreationDate.getMonth() === selectedDate.getMonth();
     });
@@ -842,7 +831,6 @@ const ClientTracker: FC = () => {
          let aValue, bValue;
          if (debtSortConfig.key === 'remainingDebt') { aValue = calculateDebtRemainingAmount(a); bValue = calculateDebtRemainingAmount(b); }
          else { aValue = a[debtSortConfig.key as keyof Debt]; bValue = b[debtSortConfig.key as keyof Debt]; }
-         // ... (sorting logic similar to clients)
          const aHasValue = aValue !== undefined && aValue !== null;
          const bHasValue = bValue !== undefined && bValue !== null;
          if (!aHasValue && !bHasValue) return 0;
@@ -872,7 +860,6 @@ const ClientTracker: FC = () => {
           if (!appointmentSortConfig.key) return 0;
           const aValue = a[appointmentSortConfig.key];
           const bValue = b[appointmentSortConfig.key];
-          // ... (sorting logic similar to clients)
           const aHasValue = aValue !== undefined && aValue !== null;
           const bHasValue = bValue !== undefined && bValue !== null;
           if (!aHasValue && !bHasValue) return 0;
@@ -881,7 +868,7 @@ const ClientTracker: FC = () => {
           let comparison = 0;
           if (aValue instanceof Date && bValue instanceof Date) comparison = aValue.getTime() - bValue.getTime();
           else if (typeof aValue === 'string' && typeof bValue === 'string' && appointmentSortConfig.key === 'time') {
-            comparison = aValue.localeCompare(bValue, 'en'); // Sort time as string
+            comparison = aValue.localeCompare(bValue, 'en');
           }
           else comparison = String(aValue).localeCompare(String(bValue), 'en');
           return appointmentSortConfig.direction === 'ascending' ? comparison : -comparison;
@@ -903,7 +890,6 @@ const ClientTracker: FC = () => {
           if (!taskSortConfig.key) return 0;
           let aValue = a[taskSortConfig.key as keyof Task];
           let bValue = b[taskSortConfig.key as keyof Task];
-          // ... (sorting logic similar to clients)
             const aHasValue = aValue !== undefined && aValue !== null;
             const bHasValue = bValue !== undefined && bValue !== null;
             if (!aHasValue && !bHasValue) return 0;
@@ -941,7 +927,7 @@ const ClientTracker: FC = () => {
 
     const totalRemainingUSD = useMemo(() => {
       if (!isMounted || rateLoading || !exchangeRates) return null;
-      return filteredClients.reduce((sum, client) => { // Use filteredClients for current month
+      return filteredClients.reduce((sum, client) => {
           const totalPaid = calculateTotalPaid(client.id!, payments, selectedDate);
           const remainingAmount = calculateClientRemainingAmount(client.totalProjectCost, totalPaid);
           const amountInUSD = convertToUSD(remainingAmount, client.currency);
@@ -951,7 +937,7 @@ const ClientTracker: FC = () => {
 
     const totalOutstandingDebtUSD = useMemo(() => {
       if (!isMounted || rateLoading || !exchangeRates) return null;
-      return filteredDebts.reduce((sum, debt) => { // Use filteredDebts
+      return filteredDebts.reduce((sum, debt) => {
         if (debt.status === 'paid') return sum;
         const remainingDebt = calculateDebtRemainingAmount(debt);
         const amountInUSD = convertToUSD(remainingDebt, debt.currency);
@@ -1027,17 +1013,16 @@ const ClientTracker: FC = () => {
       setIsSendingReport(true);
       showToast({ title: 'جاري إرسال التقرير...', description: `لحظات قليلة ويتم محاولة إرسال التقرير إلى ${data.recipientEmail}.` });
 
-      const today = new Date(); // Use current date for report context, not selectedDate
+      const today = new Date();
       const endOfYearDate = endOfYear(today);
       const daysRemainingInYear = differenceInDays(endOfYearDate, today);
 
-      // Filter data for the *current actual month* for the report, not selectedDate for viewing past data
       const currentMonthStart = dateFnsStartOfMonth(today);
       const currentMonthEnd = dateFnsEndOfMonth(today);
 
       const clientsForReport = clients.filter(c => {
           const ccDate = c.creationDate ? new Date(c.creationDate) : new Date(0);
-          return ccDate <= currentMonthEnd; // Include all clients created up to end of current month
+          return ccDate <= currentMonthEnd;
       }).map(c => ({
           ...c,
           payments: payments.filter(p => p.clientId === c.id && new Date(p.paymentDate) >= currentMonthStart && new Date(p.paymentDate) <= currentMonthEnd)
@@ -1045,8 +1030,6 @@ const ClientTracker: FC = () => {
 
       const debtsForReport = debts.filter(d => {
           const dcDate = d.creationDate ? new Date(d.creationDate) : new Date(0);
-          // Include debts active or created within the current month.
-          // Or simply all debts if that's the requirement.
           return dcDate <= currentMonthEnd;
       });
       const appointmentsForReport = appointments.filter(a => {
@@ -1072,10 +1055,10 @@ const ClientTracker: FC = () => {
                appointments: appointmentsForReport.map(a => ({ ...a, creationDate: a.creationDate?.toISOString(), date: a.date.toISOString()})),
                tasks: tasksForReport.map(t => ({ ...t, creationDate: t.creationDate?.toISOString(), dueDate: t.dueDate?.toISOString()})),
                summary: {
-                   totalPaidUSD: totalPaidUSD, // This will be for the *selectedDate* month from UI
-                   totalRemainingUSD: totalRemainingUSD, // This will be for the *selectedDate* month from UI
-                   totalOutstandingDebtUSD: totalOutstandingDebtUSD, // This will be for the *selectedDate* month from UI
-                   zakatAmountEGP: zakatAmountEGP, // This will be for the *selectedDate* month from UI
+                   totalPaidUSD: totalPaidUSD,
+                   totalRemainingUSD: totalRemainingUSD,
+                   totalOutstandingDebtUSD: totalOutstandingDebtUSD,
+                   zakatAmountEGP: zakatAmountEGP,
                },
                reportDate: today.toISOString(),
                recipientEmail: data.recipientEmail,
@@ -1102,11 +1085,17 @@ const ClientTracker: FC = () => {
 
   const handleMonthChange = (newDate: Date) => {
     setSelectedDate(newDate);
+    setFinancialAnalysisResult(null); // Clear previous analysis when month changes
+    setFinancialAnalysisError(null);
   };
 
   const prepareFinancialAnalysisInput = useCallback((): FinancialAnalysisInput | null => {
-    if (!isMounted || rateLoading || !exchangeRates || !clients.length && !payments.length) {
-        showToast({ title: "بيانات غير كافية للتحليل", description: "الرجاء إضافة بعض العملاء والدفعات أولاً أو انتظار تحميل أسعار الصرف.", variant: "destructive" });
+    if (!isMounted || rateLoading || !exchangeRates || (!clients.length && !payments.length)) {
+        if (isMounted && (!clients.length && !payments.length)) {
+          showToast({ title: "بيانات غير كافية للتحليل", description: "الرجاء إضافة بعض العملاء والدفعات أولاً.", variant: "destructive" });
+        } else if (isMounted && (rateLoading || !exchangeRates)){
+          showToast({ title: "جاري تحميل أسعار الصرف", description: "يرجى الانتظار حتى يتم تحميل أسعار الصرف قبل التحليل.", variant: "destructive" });
+        }
         return null;
     }
 
@@ -1132,7 +1121,6 @@ const ClientTracker: FC = () => {
         monthlyMap[periodKey].totalIncomeUSD += incomeUSD;
     });
 
-    // Consolidate client and project counts
     Object.keys(monthlyMap).forEach(periodKey => {
         const { year, month } = monthlyMap[periodKey];
         const clientsInMonth = new Set<string>();
@@ -1166,7 +1154,7 @@ const ClientTracker: FC = () => {
         allMonthlySummaries,
         currentMonthFocus: {
             year: selectedDate.getFullYear(),
-            month: selectedDate.getMonth() + 1, // 1-indexed for flow
+            month: selectedDate.getMonth() + 1,
         },
     };
   }, [isMounted, rateLoading, exchangeRates, clients, payments, convertToUSD, selectedDate, showToast]);
@@ -1334,42 +1322,42 @@ const ClientTracker: FC = () => {
                              return (
                                <React.Fragment key={client.id}>
                                 <TableRow className="hover:bg-muted/30 transition-colors duration-150">
-                                 <TableCell className="font-medium">{client.name}</TableCell>
-                                 <TableCell>{client.project}</TableCell>
-                                 <TableCell>{formatCurrency(client.totalProjectCost, client.currency)}</TableCell>
-                                 <TableCell>{CURRENCIES[client.currency]}</TableCell>
+                                 <TableCell className="font-medium text-foreground">{client.name}</TableCell>
+                                 <TableCell className="text-muted-foreground">{client.project}</TableCell>
+                                 <TableCell className="text-foreground">{formatCurrency(client.totalProjectCost, client.currency)}</TableCell>
+                                 <TableCell className="text-muted-foreground">{CURRENCIES[client.currency]}</TableCell>
                                  <TableCell>
                                       <Select value={paymentStatus} onValueChange={(newStatus) => client.id && handleClientStatusChange(client.id, newStatus as PaymentStatus)}>
-                                         <SelectTrigger className={cn("w-[130px] text-xs", paymentStatus === 'paid' && 'text-green-800 bg-green-100', paymentStatus === 'partially_paid' && 'text-yellow-800 bg-yellow-100', paymentStatus === 'not_paid' && 'text-red-800 bg-red-100')}><SelectValue /></SelectTrigger>
+                                         <SelectTrigger className={cn("w-[130px] text-xs", paymentStatus === 'paid' && 'text-green-800 bg-green-100 dark:text-green-200 dark:bg-green-900/50', paymentStatus === 'partially_paid' && 'text-yellow-800 bg-yellow-100 dark:text-yellow-200 dark:bg-yellow-900/50', paymentStatus === 'not_paid' && 'text-red-800 bg-red-100 dark:text-red-200 dark:bg-red-900/50')}><SelectValue /></SelectTrigger>
                                          <SelectContent>{Object.entries(PAYMENT_STATUSES).map(([key, value]) => (<SelectItem key={key} value={key} className="text-xs">{value}</SelectItem>))}</SelectContent>
                                      </Select>
                                  </TableCell>
-                                  <TableCell className="text-green-700">{formatCurrency(amountPaid, client.currency)}</TableCell>
-                                  <TableCell className="text-red-700">{formatCurrency(remainingAmount, client.currency)}</TableCell>
-                                  <TableCell className="text-blue-700">{rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : remainingAmountUSD !== null ? formatCurrency(remainingAmountUSD, 'USD') : rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}</TableCell>
-                                 <TableCell>{formatDateAr(latestPaymentDate)}</TableCell>
-                                 <TableCell className="text-left space-x-1">
+                                  <TableCell className="text-green-600 dark:text-green-400">{formatCurrency(amountPaid, client.currency)}</TableCell>
+                                  <TableCell className="text-red-600 dark:text-red-400">{formatCurrency(remainingAmount, client.currency)}</TableCell>
+                                  <TableCell className="text-blue-600 dark:text-blue-400">{rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : remainingAmountUSD !== null ? formatCurrency(remainingAmountUSD, 'USD') : rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}</TableCell>
+                                 <TableCell className="text-muted-foreground">{formatDateAr(latestPaymentDate)}</TableCell>
+                                 <TableCell className="text-left space-x-1 rtl:space-x-reverse">
                                     {(paymentStatus !== 'paid' || isAddingPayment || paymentStatus === 'partially_paid') && (
                                       <Button variant="outline" size="sm" onClick={() => { const newClientId = client.id === addingPaymentForClientId ? null : client.id; setAddingPaymentForClientId(newClientId); if (newClientId) paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() }); }} className={cn("text-xs", isAddingPayment && "bg-muted")}>
                                         {isAddingPayment ? 'إلغاء' : (amountPaid > 0 ? 'تعديل/إضافة دفعة' : 'إضافة دفعة')}
-                                        {!isAddingPayment && <Edit className="h-3 w-3 ml-1" />}
+                                        {!isAddingPayment && <Edit className="h-3 w-3 ml-1 rtl:mr-1 rtl:ml-0" />}
                                       </Button>
                                     )}
                                    <Button variant="ghost" size="icon" onClick={() => client.id && deleteClient(client.id)} className="text-destructive hover:text-destructive/80"><Trash2 className="h-4 w-4" /></Button>
                                  </TableCell>
                                </TableRow>
                                  {isAddingPayment && (
-                                     <TableRow className="bg-muted/10 border-t border-dashed">
+                                     <TableRow className="bg-muted/10 dark:bg-muted/20 border-t border-dashed">
                                          <TableCell colSpan={10} className="p-4">
                                              <Form {...paymentForm}>
                                                  <form onSubmit={paymentForm.handleSubmit(onPaymentSubmit(client.id!, client.currency))} className="flex flex-col sm:flex-row items-start sm:items-end gap-4">
-                                                     <FormField control={paymentForm.control} name="paymentAmount" render={({ field }) => (<FormItem className="flex-1"><FormLabel>مبلغ الدفعة ({client.currency})</FormLabel><FormControl><Input type="number" placeholder="المبلغ" {...field} step="0.01" max={remainingAmount > 0 || paymentStatus === 'paid' ? remainingAmount : undefined} /></FormControl><FormDescription className="text-xs text-yellow-600">المتبقي: {formatCurrency(remainingAmount, client.currency)}</FormDescription><FormMessage /></FormItem>)} />
-                                                     <FormField control={paymentForm.control} name="paymentDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel className="mb-1">تاريخ الدفعة</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn('w-[200px] sm:w-[240px] pr-3 text-right font-normal justify-between', !field.value && 'text-muted-foreground')}>{field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}<CalendarIcon className="ml-auto h-4 w-4 opacity-50" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={(date) => date > new Date() || date < new Date('1900-01-01')} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
+                                                     <FormField control={paymentForm.control} name="paymentAmount" render={({ field }) => (<FormItem className="flex-1"><FormLabel>مبلغ الدفعة ({client.currency})</FormLabel><FormControl><Input type="number" placeholder="المبلغ" {...field} step="0.01" max={remainingAmount > 0 || paymentStatus === 'paid' ? remainingAmount : undefined} /></FormControl><FormDescription className="text-xs text-yellow-600 dark:text-yellow-400">المتبقي: {formatCurrency(remainingAmount, client.currency)}</FormDescription><FormMessage /></FormItem>)} />
+                                                     <FormField control={paymentForm.control} name="paymentDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel className="mb-1">تاريخ الدفعة</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn('w-[200px] sm:w-[240px] pr-3 text-right font-normal justify-between', !field.value && 'text-muted-foreground')}>{field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}<CalendarIcon className="ml-auto h-4 w-4 opacity-50 rtl:mr-auto rtl:ml-0" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={(date) => date > new Date() || date < new Date('1900-01-01')} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
                                                      <Button type="submit" size="sm" className="bg-green-600 hover:bg-green-700 text-white">تأكيد الدفعة</Button>
                                                  </form>
                                              </Form>
-                                              <div className="mt-4 pt-4 border-t"><h4 className="text-sm font-medium mb-2">سجل الدفعات:</h4>
-                                                  {payments.filter(p => p.clientId === client.id).length > 0 ? (<ul className="list-disc pl-5 space-y-1 text-xs">{payments.filter(p => p.clientId === client.id).sort((a, b) => b.paymentDate.getTime() - a.paymentDate.getTime()).map(p => (<li key={p.id} className="flex justify-between items-center"><span>{formatCurrency(p.amount, p.currency)} - {formatDateAr(p.paymentDate)}</span><Button variant="ghost" size="icon" onClick={() => deletePayment(p.id)} className="text-destructive h-6 w-6"><Trash2 className="h-3 w-3" /></Button></li>))}</ul>) : (<p className="text-xs">لا دفعات مسجلة.</p>)}
+                                              <div className="mt-4 pt-4 border-t"><h4 className="text-sm font-medium mb-2 text-foreground">سجل الدفعات:</h4>
+                                                  {payments.filter(p => p.clientId === client.id).length > 0 ? (<ul className="list-disc pl-5 space-y-1 text-xs text-muted-foreground">{payments.filter(p => p.clientId === client.id).sort((a, b) => b.paymentDate.getTime() - a.paymentDate.getTime()).map(p => (<li key={p.id} className="flex justify-between items-center"><span>{formatCurrency(p.amount, p.currency)} - {formatDateAr(p.paymentDate)}</span><Button variant="ghost" size="icon" onClick={() => deletePayment(p.id)} className="text-destructive h-6 w-6"><Trash2 className="h-3 w-3" /></Button></li>))}</ul>) : (<p className="text-xs text-muted-foreground">لا دفعات مسجلة.</p>)}
                                               </div>
                                          </TableCell>
                                      </TableRow>
@@ -1378,18 +1366,18 @@ const ClientTracker: FC = () => {
                              );
                          })
                        ) : (
-                         <TableRow><TableCell colSpan={10} className="text-center py-8">لم تتم إضافة عملاء لهذا الشهر.</TableCell></TableRow>
+                         <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">لم تتم إضافة عملاء لهذا الشهر.</TableCell></TableRow>
                        )}
                      </TableBody>
-                      <TableFooter className="bg-muted/30">
+                      <TableFooter className="bg-muted/30 dark:bg-muted/20">
                          <TableRow>
-                           <TableCell colSpan={7} className="font-semibold text-right">الإجمالي المتبقي (دولار)</TableCell>
-                           <TableCell className="font-bold text-red-700">{rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : totalRemainingUSD !== null ? formatCurrency(totalRemainingUSD, 'USD') : rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}</TableCell>
+                           <TableCell colSpan={7} className="font-semibold text-right text-foreground">الإجمالي المتبقي (دولار)</TableCell>
+                           <TableCell className="font-bold text-red-600 dark:text-red-400">{rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : totalRemainingUSD !== null ? formatCurrency(totalRemainingUSD, 'USD') : rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}</TableCell>
                             <TableCell colSpan={2}></TableCell>
                          </TableRow>
                           <TableRow>
-                           <TableCell colSpan={7} className="font-semibold text-right">إجمالي المدفوع (دولار)</TableCell>
-                           <TableCell className="font-bold text-green-700">{rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : totalPaidUSD !== null ? formatCurrency(totalPaidUSD, 'USD') : rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}</TableCell>
+                           <TableCell colSpan={7} className="font-semibold text-right text-foreground">إجمالي المدفوع (دولار)</TableCell>
+                           <TableCell className="font-bold text-green-600 dark:text-green-400">{rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : totalPaidUSD !== null ? formatCurrency(totalPaidUSD, 'USD') : rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}</TableCell>
                             <TableCell colSpan={2}></TableCell>
                          </TableRow>
                        </TableFooter>
@@ -1410,12 +1398,12 @@ const ClientTracker: FC = () => {
                                     <FormField control={debtForm.control} name="creditorName" render={({ field }) => (<FormItem><FormLabel>الدائن</FormLabel><FormControl><Input placeholder="الدائن" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                     <FormField control={debtForm.control} name="amount" render={({ field }) => (<FormItem><FormLabel>المبلغ</FormLabel><FormControl><Input type="number" placeholder="المبلغ" {...field} step="0.01" /></FormControl><FormMessage /></FormItem>)} />
                                     <FormField control={debtForm.control} name="currency" render={({ field }) => (<FormItem><FormLabel>العملة</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent>{Object.entries(CURRENCIES).map(([code, name]) => (<SelectItem key={code} value={code}>{name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
-                                    <FormField control={debtForm.control} name="dueDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel className="mb-2">تاريخ الاستحقاق</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn(!field.value && 'text-muted-foreground')}>{field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر</span>}<CalendarIcon className="ml-auto h-4 w-4" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
+                                    <FormField control={debtForm.control} name="dueDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel className="mb-2">تاريخ الاستحقاق</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn(!field.value && 'text-muted-foreground')}>{field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر</span>}<CalendarIcon className="ml-auto h-4 w-4 rtl:mr-auto rtl:ml-0" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
                                     <FormField control={debtForm.control} name="status" render={({ field }) => (<FormItem><FormLabel>الحالة</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent>{Object.entries(DEBT_STATUSES).map(([key, value]) => (<SelectItem key={key} value={key}>{value}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
                                    {(debtStatus === 'paid' || debtStatus === 'partially_paid') && (
                                         <>
-                                           <FormField control={debtForm.control} name="amountRepaid" render={({ field }) => (<FormItem><FormLabel>المسدد {debtStatus === 'paid' && <span className='text-xs ml-1'>(يجب أن يساوي الإجمالي)</span>}</FormLabel><FormControl><Input type="number" placeholder="المسدد" {...field} step="0.01" value={field.value ?? ''} onChange={(e) => { const val = e.target.value === '' ? undefined : parseFloat(e.target.value); field.onChange(isNaN(val as number) ? undefined : val); }} disabled={debtStatus === 'paid'} /></FormControl>{debtStatus === 'partially_paid' && debtAmountRepaid !== undefined && debtAmountRepaid !== null && debtAmount > 0 && (<FormDescription className="text-sm text-yellow-600">المتبقي: {formatCurrency(debtRemainingAmountInForm, debtSelectedCurrency)}</FormDescription>)}<FormMessage /></FormItem>)} />
-                                            <FormField control={debtForm.control} name="paidDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel className="mb-2">تاريخ السداد</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn(!field.value && 'text-muted-foreground')}>{field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر</span>}<CalendarIcon className="ml-auto h-4 w-4" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={(date) => date > new Date()} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
+                                           <FormField control={debtForm.control} name="amountRepaid" render={({ field }) => (<FormItem><FormLabel>المسدد {debtStatus === 'paid' && <span className='text-xs ml-1 rtl:mr-1 rtl:ml-0'>(يجب أن يساوي الإجمالي)</span>}</FormLabel><FormControl><Input type="number" placeholder="المسدد" {...field} step="0.01" value={field.value ?? ''} onChange={(e) => { const val = e.target.value === '' ? undefined : parseFloat(e.target.value); field.onChange(isNaN(val as number) ? undefined : val); }} disabled={debtStatus === 'paid'} /></FormControl>{debtStatus === 'partially_paid' && debtAmountRepaid !== undefined && debtAmountRepaid !== null && debtAmount > 0 && (<FormDescription className="text-sm text-yellow-600 dark:text-yellow-400">المتبقي: {formatCurrency(debtRemainingAmountInForm, debtSelectedCurrency)}</FormDescription>)}<FormMessage /></FormItem>)} />
+                                            <FormField control={debtForm.control} name="paidDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel className="mb-2">تاريخ السداد</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn(!field.value && 'text-muted-foreground')}>{field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر</span>}<CalendarIcon className="ml-auto h-4 w-4 rtl:mr-auto rtl:ml-0" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={(date) => date > new Date()} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
                                          </>
                                      )}
                                       <FormField control={debtForm.control} name="notes" render={({ field }) => (<FormItem className="md:col-span-2"><FormLabel>ملاحظات</FormLabel><FormControl><Textarea placeholder="ملاحظات..." {...field} /></FormControl><FormMessage /></FormItem>)} />
@@ -1458,38 +1446,38 @@ const ClientTracker: FC = () => {
                                         return (
                                            <React.Fragment key={debt.id}>
                                             <TableRow>
-                                                <TableCell>{debt.description}</TableCell>
-                                                <TableCell>{debt.debtorName}</TableCell>
-                                                <TableCell>{debt.creditorName}</TableCell>
-                                                <TableCell>{formatCurrency(debt.amount, debt.currency)}</TableCell>
-                                                <TableCell>{CURRENCIES[debt.currency]}</TableCell>
+                                                <TableCell className="text-foreground">{debt.description}</TableCell>
+                                                <TableCell className="text-muted-foreground">{debt.debtorName}</TableCell>
+                                                <TableCell className="text-muted-foreground">{debt.creditorName}</TableCell>
+                                                <TableCell className="text-foreground">{formatCurrency(debt.amount, debt.currency)}</TableCell>
+                                                <TableCell className="text-muted-foreground">{CURRENCIES[debt.currency]}</TableCell>
                                                 <TableCell>
                                                     <Select value={debt.status} onValueChange={(newStatus) => debt.id && updateDebtStatus(debt.id, newStatus as DebtStatus)}>
-                                                        <SelectTrigger className={cn("w-[130px] text-xs", debt.status === 'paid' && 'text-green-800 bg-green-100', debt.status === 'partially_paid' && 'text-yellow-800 bg-yellow-100', debt.status === 'outstanding' && 'text-red-800 bg-red-100')}><SelectValue /></SelectTrigger>
+                                                        <SelectTrigger className={cn("w-[130px] text-xs", debt.status === 'paid' && 'text-green-800 bg-green-100 dark:text-green-200 dark:bg-green-900/50', debt.status === 'partially_paid' && 'text-yellow-800 bg-yellow-100 dark:text-yellow-200 dark:bg-yellow-900/50', debt.status === 'outstanding' && 'text-red-800 bg-red-100 dark:text-red-200 dark:bg-red-900/50')}><SelectValue /></SelectTrigger>
                                                         <SelectContent>{Object.entries(DEBT_STATUSES).map(([key, value]) => (<SelectItem key={key} value={key} className="text-xs">{value}</SelectItem>))}</SelectContent>
                                                     </Select>
                                                 </TableCell>
-                                                <TableCell className="text-green-700">{formatCurrency(amountRepaid, debt.currency)}</TableCell>
-                                                <TableCell className="text-red-700">{formatCurrency(remainingDebt, debt.currency)}</TableCell>
-                                                <TableCell className="text-blue-700">{rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : remainingDebtUSD !== null ? formatCurrency(remainingDebtUSD, 'USD') : rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}</TableCell>
-                                                <TableCell>{formatDateAr(debt.dueDate)}</TableCell>
-                                                <TableCell>{formatDateAr(debt.paidDate)}</TableCell>
-                                                <TableCell className="max-w-[150px] truncate" title={debt.notes || ''}>{debt.notes || '-'}</TableCell>
-                                                <TableCell className="text-left space-x-1">
+                                                <TableCell className="text-green-600 dark:text-green-400">{formatCurrency(amountRepaid, debt.currency)}</TableCell>
+                                                <TableCell className="text-red-600 dark:text-red-400">{formatCurrency(remainingDebt, debt.currency)}</TableCell>
+                                                <TableCell className="text-blue-600 dark:text-blue-400">{rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : remainingDebtUSD !== null ? formatCurrency(remainingDebtUSD, 'USD') : rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}</TableCell>
+                                                <TableCell className="text-muted-foreground">{formatDateAr(debt.dueDate)}</TableCell>
+                                                <TableCell className="text-muted-foreground">{formatDateAr(debt.paidDate)}</TableCell>
+                                                <TableCell className="max-w-[150px] truncate text-muted-foreground" title={debt.notes || ''}>{debt.notes || '-'}</TableCell>
+                                                <TableCell className="text-left space-x-1 rtl:space-x-reverse">
                                                      {(debt.status !== 'paid' || isEditingRepayment || debt.status === 'partially_paid') && (
                                                       <Button variant="outline" size="sm" onClick={() => { const newDebtId = debt.id === editingRepaymentForDebtId ? null : debt.id; setEditingRepaymentForDebtId(newDebtId); if (newDebtId) repaymentForm.reset({ amountRepaid: debt.amountRepaid ?? 0, paidDate: debt.paidDate || new Date() }); }} className={cn("text-xs", isEditingRepayment && "bg-muted")}>
-                                                          {isEditingRepayment ? 'إلغاء' : 'تعديل السداد'} {!isEditingRepayment && <Edit className="h-3 w-3 ml-1" />}
+                                                          {isEditingRepayment ? 'إلغاء' : 'تعديل السداد'} {!isEditingRepayment && <Edit className="h-3 w-3 ml-1 rtl:mr-1 rtl:ml-0" />}
                                                       </Button>
                                                       )}
                                                     <Button variant="ghost" size="icon" onClick={() => debt.id && deleteDebt(debt.id)} className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
                                                 </TableCell>
                                             </TableRow>
                                               {isEditingRepayment && (
-                                                  <TableRow className="bg-muted/10"><TableCell colSpan={13} className="p-4">
+                                                  <TableRow className="bg-muted/10 dark:bg-muted/20"><TableCell colSpan={13} className="p-4">
                                                           <Form {...repaymentForm}>
                                                               <form onSubmit={repaymentForm.handleSubmit(onRepaymentSubmit(debt.id!))} className="flex flex-col sm:flex-row items-start sm:items-end gap-4">
                                                                   <FormField control={repaymentForm.control} name="amountRepaid" render={({ field }) => (<FormItem className="flex-1"><FormLabel>المبلغ المسدد ({debt.currency})</FormLabel><FormControl><Input type="number" placeholder="المسدد" {...field} step="0.01" max={debt.amount} /></FormControl><FormDescription>الإجمالي: {formatCurrency(debt.amount, debt.currency)}</FormDescription><FormMessage /></FormItem>)} />
-                                                                  <FormField control={repaymentForm.control} name="paidDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel className="mb-1">تاريخ السداد</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn(!field.value && 'text-muted-foreground')}>{field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر</span>}<CalendarIcon className="ml-auto h-4 w-4" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={(date) => date > new Date()} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
+                                                                  <FormField control={repaymentForm.control} name="paidDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel className="mb-1">تاريخ السداد</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn(!field.value && 'text-muted-foreground')}>{field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر</span>}<CalendarIcon className="ml-auto h-4 w-4 rtl:mr-auto rtl:ml-0" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={(date) => date > new Date()} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
                                                                   <Button type="submit" size="sm" className="bg-blue-600 hover:bg-blue-700">حفظ</Button>
                                                               </form>
                                                           </Form>
@@ -1499,13 +1487,13 @@ const ClientTracker: FC = () => {
                                         );
                                     })
                                 ) : (
-                                    <TableRow><TableCell colSpan={13} className="text-center py-8">لا توجد ديون مسجلة لهذا الشهر.</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">لا توجد ديون مسجلة لهذا الشهر.</TableCell></TableRow>
                                 )}
                             </TableBody>
-                            <TableFooter className="bg-muted/30">
+                            <TableFooter className="bg-muted/30 dark:bg-muted/20">
                                <TableRow>
-                                 <TableCell colSpan={8} className="font-semibold text-right">إجمالي الديون المستحقة (دولار)</TableCell>
-                                 <TableCell className="font-bold text-red-700">{rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : totalOutstandingDebtUSD !== null ? formatCurrency(totalOutstandingDebtUSD, 'USD') : rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}</TableCell>
+                                 <TableCell colSpan={8} className="font-semibold text-right text-foreground">إجمالي الديون المستحقة (دولار)</TableCell>
+                                 <TableCell className="font-bold text-red-600 dark:text-red-400">{rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : totalOutstandingDebtUSD !== null ? formatCurrency(totalOutstandingDebtUSD, 'USD') : rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}</TableCell>
                                   <TableCell colSpan={4}></TableCell>
                                </TableRow>
                              </TableFooter>
@@ -1516,53 +1504,50 @@ const ClientTracker: FC = () => {
 
             <TabsContent value="appointments_tasks">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Appointments Section */}
                     <Card className="shadow-lg">
                         <CardHeader>
-                            <CardTitle className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-primary"/> إضافة موعد جديد</CardTitle>
+                            <CardTitle className="flex items-center gap-2 text-foreground"><CalendarDays className="h-5 w-5 text-primary"/> إضافة موعد جديد</CardTitle>
                         </CardHeader>
                         <CardContent>
                             <Form {...appointmentForm}>
                                 <form onSubmit={appointmentForm.handleSubmit(onAppointmentSubmit)} className="space-y-4">
                                     <FormField control={appointmentForm.control} name="title" render={({ field }) => (<FormItem><FormLabel>عنوان الموعد</FormLabel><FormControl><Input placeholder="مثال: اجتماع مع العميل X" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                     <div className="grid grid-cols-2 gap-4">
-                                        <FormField control={appointmentForm.control} name="date" render={({ field }) => (<FormItem><FormLabel>التاريخ</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn("w-full justify-start text-left font-normal",!field.value && "text-muted-foreground")}>{field.value ? formatDateEn(field.value) : <span>اختر تاريخ</span>}<CalendarIcon className="mr-auto h-4 w-4 opacity-50" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
+                                        <FormField control={appointmentForm.control} name="date" render={({ field }) => (<FormItem><FormLabel>التاريخ</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn("w-full justify-start text-left font-normal",!field.value && "text-muted-foreground")}>{field.value ? formatDateEn(field.value) : <span>اختر تاريخ</span>}<CalendarIcon className="mr-auto h-4 w-4 opacity-50 rtl:ml-auto rtl:mr-0" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
                                         <FormField control={appointmentForm.control} name="time" render={({ field }) => (<FormItem><FormLabel>الوقت</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
                                     <FormField control={appointmentForm.control} name="attendees" render={({ field }) => (<FormItem><FormLabel>الحضور (اختياري)</FormLabel><FormControl><Input placeholder="أسماء الحضور" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                     <FormField control={appointmentForm.control} name="location" render={({ field }) => (<FormItem><FormLabel>المكان/الرابط (اختياري)</FormLabel><FormControl><Input placeholder="مثال: مكتب الشركة أو رابط Zoom" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                     <FormField control={appointmentForm.control} name="status" render={({ field }) => (<FormItem><FormLabel>الحالة</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="اختر الحالة" /></SelectTrigger></FormControl><SelectContent>{Object.entries(APPOINTMENT_STATUSES).map(([key, value]) => (<SelectItem key={key} value={key}>{value}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
                                     <FormField control={appointmentForm.control} name="notes" render={({ field }) => (<FormItem><FormLabel>ملاحظات (اختياري)</FormLabel><FormControl><Textarea placeholder="ملاحظات إضافية" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                    <Button type="submit" className="w-full"><PlusCircle className="mr-2 h-4 w-4" /> إضافة موعد</Button>
+                                    <Button type="submit" className="w-full"><PlusCircle className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" /> إضافة موعد</Button>
                                 </form>
                             </Form>
                         </CardContent>
                     </Card>
 
-                    {/* Tasks Section */}
                     <Card className="shadow-lg">
                         <CardHeader>
-                            <CardTitle className="flex items-center gap-2"><ListFilter className="h-5 w-5 text-primary"/> إضافة مهمة جديدة</CardTitle>
+                            <CardTitle className="flex items-center gap-2 text-foreground"><ListFilter className="h-5 w-5 text-primary"/> إضافة مهمة جديدة</CardTitle>
                         </CardHeader>
                         <CardContent>
                             <Form {...taskForm}>
                                 <form onSubmit={taskForm.handleSubmit(onTaskSubmit)} className="space-y-4">
                                     <FormField control={taskForm.control} name="description" render={({ field }) => (<FormItem><FormLabel>وصف المهمة</FormLabel><FormControl><Input placeholder="مثال: إعداد عرض تقديمي للمشروع Y" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                    <FormField control={taskForm.control} name="dueDate" render={({ field }) => (<FormItem><FormLabel>تاريخ الاستحقاق (اختياري)</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn("w-full justify-start text-left font-normal",!field.value && "text-muted-foreground")}>{field.value ? formatDateEn(field.value) : <span>اختر تاريخ</span>}<CalendarIcon className="mr-auto h-4 w-4 opacity-50" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
+                                    <FormField control={taskForm.control} name="dueDate" render={({ field }) => (<FormItem><FormLabel>تاريخ الاستحقاق (اختياري)</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn("w-full justify-start text-left font-normal",!field.value && "text-muted-foreground")}>{field.value ? formatDateEn(field.value) : <span>اختر تاريخ</span>}<CalendarIcon className="mr-auto h-4 w-4 opacity-50 rtl:ml-auto rtl:mr-0" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
                                     <FormField control={taskForm.control} name="priority" render={({ field }) => (<FormItem><FormLabel>الأولوية</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="اختر الأولوية" /></SelectTrigger></FormControl><SelectContent><SelectItem value="low">منخفضة</SelectItem><SelectItem value="medium">متوسطة</SelectItem><SelectItem value="high">عالية</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
                                     <FormField control={taskForm.control} name="status" render={({ field }) => (<FormItem><FormLabel>الحالة</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="اختر الحالة" /></SelectTrigger></FormControl><SelectContent>{Object.entries(TASK_STATUSES).map(([key, value]) => (<SelectItem key={key} value={key}>{value}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
                                     <FormField control={taskForm.control} name="notes" render={({ field }) => (<FormItem><FormLabel>ملاحظات (اختياري)</FormLabel><FormControl><Textarea placeholder="ملاحظات إضافية" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                    <Button type="submit" className="w-full"><PlusCircle className="mr-2 h-4 w-4" /> إضافة مهمة</Button>
+                                    <Button type="submit" className="w-full"><PlusCircle className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" /> إضافة مهمة</Button>
                                 </form>
                             </Form>
                         </CardContent>
                     </Card>
                 </div>
 
-                {/* Display Appointments and Tasks */}
                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
                     <Card className="shadow-lg">
-                        <CardHeader><CardTitle>مواعيد شهر {format(selectedDate, "MMMM yyyy", { locale: arSA })}</CardTitle></CardHeader>
+                        <CardHeader><CardTitle className="text-foreground">مواعيد شهر {format(selectedDate, "MMMM yyyy", { locale: arSA })}</CardTitle></CardHeader>
                         <CardContent>
                             <Table>
                                 <TableHeader>
@@ -1577,9 +1562,9 @@ const ClientTracker: FC = () => {
                                 <TableBody>
                                     {sortedAppointments.length > 0 ? sortedAppointments.map(apt => (
                                         <TableRow key={apt.id}>
-                                            <TableCell>{apt.title}</TableCell>
-                                            <TableCell>{formatDateEn(apt.date)}</TableCell>
-                                            <TableCell>{apt.time}</TableCell>
+                                            <TableCell className="text-foreground">{apt.title}</TableCell>
+                                            <TableCell className="text-muted-foreground">{formatDateEn(apt.date)}</TableCell>
+                                            <TableCell className="text-muted-foreground">{apt.time}</TableCell>
                                             <TableCell>
                                                 <Select value={apt.status} onValueChange={(newStatus) => apt.id && updateAppointmentStatus(apt.id, newStatus as AppointmentStatus)}>
                                                     <SelectTrigger className="text-xs w-[120px]"><SelectValue /></SelectTrigger>
@@ -1590,14 +1575,14 @@ const ClientTracker: FC = () => {
                                                 <Button variant="ghost" size="icon" onClick={() => apt.id && deleteAppointment(apt.id)} className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
                                             </TableCell>
                                         </TableRow>
-                                    )) : <TableRow><TableCell colSpan={5} className="text-center py-4">لا توجد مواعيد لهذا الشهر.</TableCell></TableRow>}
+                                    )) : <TableRow><TableCell colSpan={5} className="text-center py-4 text-muted-foreground">لا توجد مواعيد لهذا الشهر.</TableCell></TableRow>}
                                 </TableBody>
                             </Table>
                         </CardContent>
                     </Card>
 
                     <Card className="shadow-lg">
-                        <CardHeader><CardTitle>مهام شهر {format(selectedDate, "MMMM yyyy", { locale: arSA })}</CardTitle></CardHeader>
+                        <CardHeader><CardTitle className="text-foreground">مهام شهر {format(selectedDate, "MMMM yyyy", { locale: arSA })}</CardTitle></CardHeader>
                         <CardContent>
                             <Table>
                                 <TableHeader>
@@ -1612,9 +1597,9 @@ const ClientTracker: FC = () => {
                                 <TableBody>
                                     {sortedTasks.length > 0 ? sortedTasks.map(task => (
                                         <TableRow key={task.id}>
-                                            <TableCell>{task.description}</TableCell>
-                                            <TableCell>{task.dueDate ? formatDateEn(task.dueDate) : '-'}</TableCell>
-                                            <TableCell>{task.priority === 'low' ? 'منخفضة' : task.priority === 'medium' ? 'متوسطة' : 'عالية'}</TableCell>
+                                            <TableCell className="text-foreground">{task.description}</TableCell>
+                                            <TableCell className="text-muted-foreground">{task.dueDate ? formatDateEn(task.dueDate) : '-'}</TableCell>
+                                            <TableCell className="text-muted-foreground">{task.priority === 'low' ? 'منخفضة' : task.priority === 'medium' ? 'متوسطة' : 'عالية'}</TableCell>
                                             <TableCell>
                                                  <Select value={task.status} onValueChange={(newStatus) => task.id && updateTaskStatus(task.id, newStatus as TaskStatus)}>
                                                     <SelectTrigger className="text-xs w-[140px]"><SelectValue /></SelectTrigger>
@@ -1625,7 +1610,7 @@ const ClientTracker: FC = () => {
                                                 <Button variant="ghost" size="icon" onClick={() => task.id && deleteTask(task.id)} className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
                                             </TableCell>
                                         </TableRow>
-                                    )) : <TableRow><TableCell colSpan={5} className="text-center py-4">لا توجد مهام لهذا الشهر.</TableCell></TableRow>}
+                                    )) : <TableRow><TableCell colSpan={5} className="text-center py-4 text-muted-foreground">لا توجد مهام لهذا الشهر.</TableCell></TableRow>}
                                 </TableBody>
                             </Table>
                         </CardContent>
@@ -1637,7 +1622,7 @@ const ClientTracker: FC = () => {
         <Card className="mt-8 shadow-lg border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden bg-purple-50 dark:bg-purple-900/20">
             <CardHeader className="bg-purple-100 dark:bg-purple-800/30">
                 <CardTitle className="text-xl text-purple-800 dark:text-purple-300 flex items-center">
-                    <Brain className="mr-2 h-6 w-6" />
+                    <Brain className="mr-2 h-6 w-6 rtl:ml-2 rtl:mr-0" />
                     التحليل المالي بواسطة الذكاء الاصطناعي
                 </CardTitle>
                 <CardDescription className="text-purple-700 dark:text-purple-400 mt-1">
@@ -1646,7 +1631,7 @@ const ClientTracker: FC = () => {
             </CardHeader>
             <CardContent className="pt-6">
                 <Button onClick={handleAnalyzeFinancials} disabled={isAnalyzingFinancials || rateLoading || !exchangeRates} className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white">
-                    {isAnalyzingFinancials ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> جاري التحليل...</> : <><BarChartBig className="mr-2 h-4 w-4" /> تحليل البيانات الآن</>}
+                    {isAnalyzingFinancials ? <><Loader2 className="mr-2 h-4 w-4 animate-spin rtl:ml-2 rtl:mr-0" /> جاري التحليل...</> : <><BarChartBig className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" /> تحليل البيانات الآن</>}
                 </Button>
                 {rateLoading && <p className="text-sm text-muted-foreground mt-2">يرجى الانتظار حتى يتم تحميل أسعار الصرف...</p>}
                 {!rateLoading && !exchangeRates && rateError && <p className="text-sm text-destructive mt-2">لا يمكن إجراء التحليل بسبب خطأ في تحميل أسعار الصرف.</p>}
@@ -1655,27 +1640,27 @@ const ClientTracker: FC = () => {
                     <div className="mt-6 space-y-4 text-sm">
                         <div>
                             <h3 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-1">التقييم العام:</h3>
-                            <p className="text-foreground whitespace-pre-wrap">{financialAnalysisResult.overallAssessment}</p>
+                            <p className="text-foreground whitespace-pre-wrap">{financialAnalysisResult.overallAssessment_ar}</p>
                         </div>
                         <div>
                             <h3 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-1">أداء الشهر الحالي ({format(selectedDate, "MMMM yyyy", { locale: arSA })}):</h3>
-                            <p className="text-foreground whitespace-pre-wrap">{financialAnalysisResult.currentMonthPerformance}</p>
+                            <p className="text-foreground whitespace-pre-wrap">{financialAnalysisResult.currentMonthPerformance_ar}</p>
                         </div>
                         <div>
                             <h3 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-1">التحليل المقارن:</h3>
-                            <p className="text-foreground whitespace-pre-wrap">{financialAnalysisResult.comparativeAnalysis}</p>
+                            <p className="text-foreground whitespace-pre-wrap">{financialAnalysisResult.comparativeAnalysis_ar}</p>
                         </div>
                         <div>
                             <h3 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-1">الاتجاهات الرئيسية:</h3>
-                            <ul className="list-disc pl-5 space-y-1 text-foreground">
-                                {financialAnalysisResult.keyTrends.map((trend, index) => <li key={index} className="whitespace-pre-wrap">{trend}</li>)}
+                            <ul className="list-disc pl-5 space-y-1 text-foreground rtl:pr-5 rtl:pl-0">
+                                {financialAnalysisResult.keyTrends_ar.map((trend, index) => <li key={index} className="whitespace-pre-wrap">{trend}</li>)}
                             </ul>
                         </div>
-                        {financialAnalysisResult.potentialFocusAreas && financialAnalysisResult.potentialFocusAreas.length > 0 && (
+                        {financialAnalysisResult.potentialFocusAreas_ar && financialAnalysisResult.potentialFocusAreas_ar.length > 0 && (
                             <div>
                                 <h3 className="font-semibold text-lg text-purple-700 dark:text-purple-300 mb-1">نقاط للتركيز عليها:</h3>
-                                <ul className="list-disc pl-5 space-y-1 text-foreground">
-                                    {financialAnalysisResult.potentialFocusAreas.map((area, index) => <li key={index} className="whitespace-pre-wrap">{area}</li>)}
+                                <ul className="list-disc pl-5 space-y-1 text-foreground rtl:pr-5 rtl:pl-0">
+                                    {financialAnalysisResult.potentialFocusAreas_ar.map((area, index) => <li key={index} className="whitespace-pre-wrap">{area}</li>)}
                                 </ul>
                             </div>
                         )}
@@ -1694,7 +1679,7 @@ const ClientTracker: FC = () => {
         <Card className="mt-8 shadow-lg border border-green-200 dark:border-green-700 rounded-lg overflow-hidden bg-green-50 dark:bg-green-900/20">
             <CardHeader className="bg-green-100 dark:bg-green-800/30">
                 <CardTitle className="text-xl text-green-800 dark:text-green-300 flex items-center">
-                    <Coins className="mr-2 h-6 w-6" />
+                    <Coins className="mr-2 h-6 w-6 rtl:ml-2 rtl:mr-0" />
                     حساب زكاة المال (تقديري لشهر {format(selectedDate, "MMMM yyyy", { locale: arSA })})
                 </CardTitle>
                  <CardDescription className="text-green-700 dark:text-green-400 mt-1">
@@ -1702,17 +1687,17 @@ const ClientTracker: FC = () => {
                 </CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
-                {rateLoading ? <div className="flex items-center"><Loader2 className="h-5 w-5 animate-spin mr-2" />جاري تحميل...</div> : rateError || !exchangeRates || !exchangeRates.EGP ? <Alert variant="destructive"><AlertCircle className="h-4 w-4"/><AlertTitle>خطأ</AlertTitle><AlertDescription>لا يمكن حساب الزكاة (خطأ في سعر الصرف).</AlertDescription></Alert> : netWealthForZakatUSD !== null && netWealthForZakatUSD > 0 && zakatAmountEGP !== null ? (
+                {rateLoading ? <div className="flex items-center"><Loader2 className="h-5 w-5 animate-spin mr-2 rtl:ml-2 rtl:mr-0" />جاري تحميل...</div> : rateError || !exchangeRates || !exchangeRates.EGP ? <Alert variant="destructive"><AlertCircle className="h-4 w-4"/><AlertTitle>خطأ</AlertTitle><AlertDescription>لا يمكن حساب الزكاة (خطأ في سعر الصرف).</AlertDescription></Alert> : netWealthForZakatUSD !== null && netWealthForZakatUSD > 0 && zakatAmountEGP !== null ? (
                     <div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <div><p className="text-sm">إجمالي الدخل (دولار):</p><p className="text-lg font-semibold text-green-700">{formatCurrency(totalPaidUSD, 'USD')}</p></div>
-                            <div><p className="text-sm">إجمالي الديون (دولار):</p><p className="text-lg font-semibold text-red-700">{formatCurrency(totalOutstandingDebtUSD, 'USD')}</p></div>
+                            <div><p className="text-sm text-muted-foreground">إجمالي الدخل (دولار):</p><p className="text-lg font-semibold text-green-700 dark:text-green-400">{formatCurrency(totalPaidUSD, 'USD')}</p></div>
+                            <div><p className="text-sm text-muted-foreground">إجمالي الديون (دولار):</p><p className="text-lg font-semibold text-red-700 dark:text-red-400">{formatCurrency(totalOutstandingDebtUSD, 'USD')}</p></div>
                         </div>
-                         <div className="mb-4"><p className="text-sm">صافي الثروة (دولار):</p><p className="text-lg font-semibold text-blue-700">{formatCurrency(netWealthForZakatUSD, 'USD')}</p></div>
-                         <div className="mb-2"><p className="text-sm">سعر الصرف (دولار/جنيه):</p><p className="text-lg font-semibold">1 USD = {exchangeRates.EGP.toLocaleString('en-US', {minimumFractionDigits: 2})} EGP</p></div>
-                        <div className="border-t pt-4 mt-4"><p className="text-md">مبلغ الزكاة (جنيه مصري):</p><p className="text-2xl font-bold text-primary">{formatCurrency(zakatAmountEGP, 'EGP')}</p><p className="text-xs mt-1">(25 جنيه عن كل 1000 جنيه صافي)</p></div>
+                         <div className="mb-4"><p className="text-sm text-muted-foreground">صافي الثروة (دولار):</p><p className="text-lg font-semibold text-blue-700 dark:text-blue-400">{formatCurrency(netWealthForZakatUSD, 'USD')}</p></div>
+                         <div className="mb-2"><p className="text-sm text-muted-foreground">سعر الصرف (دولار/جنيه):</p><p className="text-lg font-semibold text-foreground">1 USD = {exchangeRates.EGP.toLocaleString('en-US', {minimumFractionDigits: 2})} EGP</p></div>
+                        <div className="border-t pt-4 mt-4"><p className="text-md text-foreground">مبلغ الزكاة (جنيه مصري):</p><p className="text-2xl font-bold text-primary">{formatCurrency(zakatAmountEGP, 'EGP')}</p><p className="text-xs mt-1 text-muted-foreground">(25 جنيه عن كل 1000 جنيه صافي)</p></div>
                     </div>
-                ) : ( <Alert className="bg-yellow-50 border-yellow-200 text-yellow-800"><AlertCircle className="h-4 w-4" /><AlertTitle>لا زكاة مستحقة</AlertTitle><AlertDescription>صافي الثروة أقل من الصفر أو لا بيانات كافية.</AlertDescription></Alert> )}
+                ) : ( <Alert className="bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/50 dark:border-yellow-700 dark:text-yellow-300"><AlertCircle className="h-4 w-4"/><AlertTitle>لا زكاة مستحقة</AlertTitle><AlertDescription>صافي الثروة أقل من الصفر أو لا بيانات كافية.</AlertDescription></Alert> )}
             </CardContent>
         </Card>
     </div>

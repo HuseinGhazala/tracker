@@ -10,30 +10,30 @@
 import { z } from 'genkit';
 
 export const MonthlySummarySchema = z.object({
-  year: z.number().describe("The year of the summary."),
-  month: z.number().min(1).max(12).describe("The month of the summary (1 for January, 12 for December)."),
-  totalIncomeUSD: z.number().describe("Total income in USD for the month."),
-  numberOfClients: z.number().optional().describe("Number of active clients who made payments during the month."),
-  numberOfProjects: z.number().optional().describe("Number of unique projects associated with clients who made payments during the month."),
+  year: z.number().describe("سنة الملخص."),
+  month: z.number().min(1).max(12).describe("شهر الملخص (1 ليناير، 12 لديسمبر)."),
+  totalIncomeUSD: z.number().describe("إجمالي الدخل بالدولار الأمريكي للشهر."),
+  numberOfClients: z.number().optional().describe("عدد العملاء النشطين الذين قاموا بالدفع خلال الشهر."),
+  numberOfProjects: z.number().optional().describe("عدد المشاريع الفريدة المرتبطة بالعملاء الذين قاموا بالدفع خلال الشهر."),
 });
 export type MonthlySummary = z.infer<typeof MonthlySummarySchema>;
 
 export const FinancialAnalysisInputSchema = z.object({
-  allMonthlySummaries: z.array(MonthlySummarySchema).describe("An array of financial summaries for all available months. Ensure months are chronologically sorted if possible."),
+  allMonthlySummaries: z.array(MonthlySummarySchema).describe("مصفوفة من الملخصات المالية لجميع الأشهر المتاحة. تأكد من فرز الأشهر ترتيبًا زمنيًا إذا أمكن."),
   currentMonthFocus: z.object({
     year: z.number(),
     month: z.number().min(1).max(12),
-  }).describe("The specific month (year and 1-indexed month number) the user is currently viewing or wants to focus the analysis on."),
-  analysisContext: z.string().optional().describe("Optional user-provided context or specific questions for the analysis, e.g., 'Focus on growth compared to last quarter'.")
+  }).describe("الشهر المحدد (السنة ورقم الشهر المفهرس من 1) الذي يعرضه المستخدم حاليًا أو يريد تركيز التحليل عليه."),
+  analysisContext: z.string().optional().describe("سياق اختياري مقدم من المستخدم أو أسئلة محددة للتحليل، على سبيل المثال، 'ركز على النمو مقارنة بالربع الأخير'.")
 });
 export type FinancialAnalysisInput = z.infer<typeof FinancialAnalysisInputSchema>;
 
 export const FinancialAnalysisOutputSchema = z.object({
-  overallAssessment: z.string().describe("A general assessment of the financial health and trends observed from all available data. Example: 'Overall financial health appears stable with a slight upward trend in income over the past year.'"),
-  currentMonthPerformance: z.string().describe("Specific analysis of the current month's performance. Example: 'Income for YYYY-MM was $X, representing a Y% increase from the previous month.'"),
-  comparativeAnalysis: z.string().describe("Comparison of the current month with previous periods (e.g., last month, same month last year if data allows). Example: 'Compared to MM-YYYY, income is up by Z%. Average monthly income for the past 6 months was $W.'"),
-  keyTrends: z.array(z.string()).describe("List of key financial trends identified (e.g., ['Income increased by X% over the last 3 months.', 'Client acquisition rate has been steady.'])."),
-  potentialFocusAreas: z.array(z.string()).optional().describe("Suggestions for areas that might need attention or investigation based on the data. Example: ['Investigate the slight dip in project count this month despite consistent client numbers.']"),
+  overallAssessment_ar: z.string().describe("تقييم عام للصحة المالية والاتجاهات المرصودة من جميع البيانات المتاحة (باللغة العربية). مثال: 'تبدو الصحة المالية العامة مستقرة مع اتجاه تصاعدي طفيف في الدخل خلال العام الماضي.'"),
+  currentMonthPerformance_ar: z.string().describe("تحليل محدد لأداء الشهر الحالي (باللغة العربية). مثال: 'بلغ الدخل لشهر YYYY-MM مبلغ X دولار، مما يمثل زيادة بنسبة Y% عن الشهر السابق.'"),
+  comparativeAnalysis_ar: z.string().describe("مقارنة الشهر الحالي بالفترات السابقة (مثل الشهر الماضي، نفس الشهر من العام الماضي إذا سمحت البيانات) (باللغة العربية). مثال: 'مقارنة بشهر MM-YYYY، ارتفع الدخل بنسبة Z%. بلغ متوسط الدخل الشهري للأشهر الستة الماضية W دولار.'"),
+  keyTrends_ar: z.array(z.string()).describe("قائمة بالاتجاهات المالية الرئيسية المحددة (باللغة العربية) (مثال: ['زاد الدخل بنسبة X% خلال الأشهر الثلاثة الماضية.'، 'كان معدل اكتساب العملاء ثابتًا.'])."),
+  potentialFocusAreas_ar: z.array(z.string()).optional().describe("اقتراحات للمجالات التي قد تحتاج إلى اهتمام أو تحقيق بناءً على البيانات (باللغة العربية). مثال: ['تحقق من الانخفاض الطفيف في عدد المشاريع هذا الشهر على الرغم من ثبات أعداد العملاء.']"),
 });
 export type FinancialAnalysisOutput = z.infer<typeof FinancialAnalysisOutputSchema>;
 
