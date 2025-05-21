@@ -11,7 +11,7 @@ import { z } from 'genkit';
 
 export const MonthlySummarySchema = z.object({
   year: z.number().describe("سنة الملخص."),
-  month: z.number().min(1).max(12).describe("شهر الملخص (1 ليناير، 12 لديسمبر)."),
+  month: z.string().length(2).regex(/^(0[1-9]|1[0-2])$/, "يجب أن يكون الشهر مكونًا من رقمين (01-12).").describe("شهر الملخص (بصيغة 'MM'، مثال: '01' ليناير، '12' لديسمبر)."),
   totalIncomeUSD: z.number().describe("إجمالي الدخل بالدولار الأمريكي للشهر."),
   numberOfClients: z.number().optional().describe("عدد العملاء النشطين الذين قاموا بالدفع خلال الشهر."),
   numberOfProjects: z.number().optional().describe("عدد المشاريع الفريدة المرتبطة بالعملاء الذين قاموا بالدفع خلال الشهر."),
@@ -22,8 +22,8 @@ export const FinancialAnalysisInputSchema = z.object({
   allMonthlySummaries: z.array(MonthlySummarySchema).describe("مصفوفة من الملخصات المالية لجميع الأشهر المتاحة. تأكد من فرز الأشهر ترتيبًا زمنيًا إذا أمكن."),
   currentMonthFocus: z.object({
     year: z.number(),
-    month: z.number().min(1).max(12),
-  }).describe("الشهر المحدد (السنة ورقم الشهر المفهرس من 1) الذي يعرضه المستخدم حاليًا أو يريد تركيز التحليل عليه."),
+    month: z.string().length(2).regex(/^(0[1-9]|1[0-2])$/, "يجب أن يكون الشهر مكونًا من رقمين (01-12)."),
+  }).describe("الشهر المحدد (السنة والشهر بصيغة 'MM') الذي يعرضه المستخدم حاليًا أو يريد تركيز التحليل عليه."),
   analysisContext: z.string().optional().describe("سياق اختياري مقدم من المستخدم أو أسئلة محددة للتحليل، على سبيل المثال، 'ركز على النمو مقارنة بالربع الأخير'.")
 });
 export type FinancialAnalysisInput = z.infer<typeof FinancialAnalysisInputSchema>;
@@ -36,4 +36,3 @@ export const FinancialAnalysisOutputSchema = z.object({
   potentialFocusAreas_ar: z.array(z.string()).optional().describe("اقتراحات للمجالات التي قد تحتاج إلى اهتمام أو تحقيق بناءً على البيانات (باللغة العربية). مثال: ['تحقق من الانخفاض الطفيف في عدد المشاريع هذا الشهر على الرغم من ثبات أعداد العملاء.']"),
 });
 export type FinancialAnalysisOutput = z.infer<typeof FinancialAnalysisOutputSchema>;
-

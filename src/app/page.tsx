@@ -1099,18 +1099,19 @@ const ClientTracker: FC = () => {
         return null;
     }
 
-    const monthlyMap: { [key: string]: MonthlySummary } = {};
+    const monthlyMap: { [key: string]: Partial<MonthlySummary> & { year: number; month: string } } = {};
+
 
     payments.forEach(payment => {
         const paymentDate = new Date(payment.paymentDate);
         const year = paymentDate.getFullYear();
-        const month = paymentDate.getMonth() + 1; // 1-indexed
-        const periodKey = `${year}-${String(month).padStart(2, '0')}`;
+        const monthStr = String(paymentDate.getMonth() + 1).padStart(2, '0'); // 01-12
+        const periodKey = `${year}-${monthStr}`;
 
         if (!monthlyMap[periodKey]) {
             monthlyMap[periodKey] = {
                 year,
-                month,
+                month: monthStr,
                 totalIncomeUSD: 0,
                 numberOfClients: 0,
                 numberOfProjects: 0,
@@ -1118,17 +1119,19 @@ const ClientTracker: FC = () => {
         }
 
         const incomeUSD = convertToUSD(payment.amount, payment.currency) ?? 0;
-        monthlyMap[periodKey].totalIncomeUSD += incomeUSD;
+        monthlyMap[periodKey].totalIncomeUSD! += incomeUSD;
     });
 
     Object.keys(monthlyMap).forEach(periodKey => {
-        const { year, month } = monthlyMap[periodKey];
+        const summary = monthlyMap[periodKey];
+        const year = summary.year;
+        const monthStr = summary.month; // Already a string 'MM'
         const clientsInMonth = new Set<string>();
         const projectsInMonth = new Set<string>();
 
         payments.forEach(p => {
             const pDate = new Date(p.paymentDate);
-            if (pDate.getFullYear() === year && (pDate.getMonth() + 1) === month) {
+            if (pDate.getFullYear() === year && String(pDate.getMonth() + 1).padStart(2, '0') === monthStr) {
                 clientsInMonth.add(p.clientId);
                 const clientDetails = clients.find(c => c.id === p.clientId);
                 if (clientDetails) {
@@ -1136,13 +1139,13 @@ const ClientTracker: FC = () => {
                 }
             }
         });
-        monthlyMap[periodKey].numberOfClients = clientsInMonth.size;
-        monthlyMap[periodKey].numberOfProjects = projectsInMonth.size;
+        summary.numberOfClients = clientsInMonth.size;
+        summary.numberOfProjects = projectsInMonth.size;
     });
 
-    const allMonthlySummaries = Object.values(monthlyMap).sort((a, b) => {
+    const allMonthlySummaries = Object.values(monthlyMap).map(m => m as MonthlySummary).sort((a, b) => {
         if (a.year !== b.year) return a.year - b.year;
-        return a.month - b.month;
+        return a.month.localeCompare(b.month);
     });
 
     if (allMonthlySummaries.length === 0) {
@@ -1154,7 +1157,7 @@ const ClientTracker: FC = () => {
         allMonthlySummaries,
         currentMonthFocus: {
             year: selectedDate.getFullYear(),
-            month: selectedDate.getMonth() + 1,
+            month: String(selectedDate.getMonth() + 1).padStart(2, '0'), // Format to 'MM'
         },
     };
   }, [isMounted, rateLoading, exchangeRates, clients, payments, convertToUSD, selectedDate, showToast]);
@@ -1516,7 +1519,7 @@ const ClientTracker: FC = () => {
                                         <FormField control={appointmentForm.control} name="date" render={({ field }) => (<FormItem><FormLabel>التاريخ</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant="outline" className={cn("w-full justify-start text-left font-normal",!field.value && "text-muted-foreground")}>{field.value ? formatDateEn(field.value) : <span>اختر تاريخ</span>}<CalendarIcon className="mr-auto h-4 w-4 opacity-50 rtl:ml-auto rtl:mr-0" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
                                         <FormField control={appointmentForm.control} name="time" render={({ field }) => (<FormItem><FormLabel>الوقت</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
-                                    <FormField control={appointmentForm.control} name="attendees" render={({ field }) => (<FormItem><FormLabel>الحضور (اختياري)</FormLabel><FormControl><Input placeholder="أسماء الحضور" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={appointmentForm.control} name="attendees" render={({ field }) => (<FormItem><FormLabel>الحاضرون (اختياري)</FormLabel><FormControl><Input placeholder="أسماء الحضور" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                     <FormField control={appointmentForm.control} name="location" render={({ field }) => (<FormItem><FormLabel>المكان/الرابط (اختياري)</FormLabel><FormControl><Input placeholder="مثال: مكتب الشركة أو رابط Zoom" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                     <FormField control={appointmentForm.control} name="status" render={({ field }) => (<FormItem><FormLabel>الحالة</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="اختر الحالة" /></SelectTrigger></FormControl><SelectContent>{Object.entries(APPOINTMENT_STATUSES).map(([key, value]) => (<SelectItem key={key} value={key}>{value}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
                                     <FormField control={appointmentForm.control} name="notes" render={({ field }) => (<FormItem><FormLabel>ملاحظات (اختياري)</FormLabel><FormControl><Textarea placeholder="ملاحظات إضافية" {...field} /></FormControl><FormMessage /></FormItem>)} />
