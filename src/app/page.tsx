@@ -1169,9 +1169,9 @@ const ClientTracker: FC = () => {
           console.error("Error sending manual report:", error);
           let errorMessage = `حدث خطأ أثناء إرسال التقرير: ${error.message}`;
           if (error.message.includes('Missing credentials') || error.message.includes('Invalid login')) {
-              errorMessage = "فشل إرسال التقرير: بيانات اعتماد البريد الإلكتروني (Gmail) غير صحيحة أو مفقودة.";
+              errorMessage = "فشل إرسال التقرير: بيانات اعتماد البريد الإلكتروني (Gmail) غير صحيحة أو مفقودة. يرجى التحقق من متغيري GMAIL_USER و GMAIL_APP_PASSWORD في ملف .env الخاص بك.";
           } else if (error.message.includes('Email service is not configured')) {
-               errorMessage = "فشل إرسال التقرير: خدمة البريد الإلكتروني غير مهيأة.";
+               errorMessage = "فشل إرسال التقرير: خدمة البريد الإلكتروني غير مهيأة. تأكد من أن متغيري GMAIL_USER و GMAIL_APP_PASSWORD موجودان ومُعدان بشكل صحيح في ملف .env الخاص بك.";
           }
           showToast({ title: 'فشل إرسال التقرير', description: errorMessage, variant: 'destructive' });
       } finally {
