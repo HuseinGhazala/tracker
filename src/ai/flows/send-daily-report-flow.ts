@@ -21,15 +21,20 @@ export async function sendDailyReport(input: DailyReportInput): Promise<DailyRep
     const flowInputData: z.infer<typeof DailyReportInputSchema> = {
         clients: input.clients ?? [],
         debts: input.debts ?? [],
+        appointments: input.appointments ?? [],
+        tasks: input.tasks ?? [],
+        expenses: input.expenses ?? [], // Added expenses
         summary: {
             totalPaidUSD: input.summary?.totalPaidUSD ?? null,
             totalRemainingUSD: input.summary?.totalRemainingUSD ?? null,
             totalOutstandingDebtUSD: input.summary?.totalOutstandingDebtUSD ?? null,
+            totalExpensesUSD: input.summary?.totalExpensesUSD ?? null, // Added totalExpensesUSD
+            zakatAmountEGP: input.summary?.zakatAmountEGP ?? null,
         },
         reportDate: input.reportDate ?? new Date().toISOString(),
         htmlChart: input.htmlChart,
         daysRemainingInYear: input.daysRemainingInYear,
-        recipientEmail: input.recipientEmail, // This was correctly passed
+        recipientEmail: input.recipientEmail,
     };
 
     try {
@@ -49,7 +54,7 @@ const dailyReportFlow = ai.defineFlow(
   },
   async (flowInput) => {
     const reportDate = flowInput.reportDate ? new Date(flowInput.reportDate) : new Date();
-    const recipientEmail = flowInput.recipientEmail; // Use email from input
+    const recipientEmail = flowInput.recipientEmail;
 
     if (!recipientEmail) {
       console.error('Recipient email is missing in flowInput for dailyReportFlow.');
@@ -62,7 +67,6 @@ const dailyReportFlow = ai.defineFlow(
     const endOfMonthDate = endOfMonth(today);
     const daysRemainingInMonth = differenceInDays(endOfMonthDate, today);
 
-    // Generate a more detailed HTML email body
     let emailHtml = `
     <html lang="ar" dir="rtl">
     <head>
@@ -97,6 +101,9 @@ const dailyReportFlow = ai.defineFlow(
             <div class="summary-item"><strong>إجمالي الدخل المقبوض:</strong> ${flowInput.summary?.totalPaidUSD?.toFixed(2) ?? 'N/A'} USD</div>
             <div class="summary-item"><strong>إجمالي المبالغ المتبقية من العملاء:</strong> ${flowInput.summary?.totalRemainingUSD?.toFixed(2) ?? 'N/A'} USD</div>
             <div class="summary-item"><strong>إجمالي الديون المستحقة عليك:</strong> ${flowInput.summary?.totalOutstandingDebtUSD?.toFixed(2) ?? 'N/A'} USD</div>
+            <div class="summary-item"><strong>إجمالي المصروفات:</strong> ${flowInput.summary?.totalExpensesUSD?.toFixed(2) ?? 'N/A'} USD</div>
+            <div class="summary-item"><strong>مبلغ الزكاة التقديري (جنيه مصري):</strong> ${flowInput.summary?.zakatAmountEGP?.toFixed(2) ?? 'N/A'} EGP</div>
+
 
             <h2>تفاصيل العملاء</h2>`;
 
@@ -174,6 +181,38 @@ const dailyReportFlow = ai.defineFlow(
       emailHtml += `<p>لا توجد بيانات ديون لعرضها.</p>`;
     }
 
+    emailHtml += `<h2>تفاصيل المصروفات</h2>`;
+    if (flowInput.expenses && flowInput.expenses.length > 0) {
+      emailHtml += `
+            <table>
+                <thead>
+                    <tr>
+                        <th>الوصف</th>
+                        <th>المبلغ</th>
+                        <th>العملة</th>
+                        <th>الفئة</th>
+                        <th>التاريخ</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+      flowInput.expenses.forEach((expense: any) => {
+        emailHtml += `
+                    <tr>
+                        <td>${expense.description}</td>
+                        <td>${expense.amount?.toFixed(2)}</td>
+                        <td>${expense.currency}</td>
+                        <td>${expense.category}</td> 
+                        <td>${expense.expenseDate ? formatDateFn(new Date(expense.expenseDate), 'PPP', {locale: arSA}) : 'N/A'}</td>
+                    </tr>`;
+      });
+      emailHtml += `
+                </tbody>
+            </table>`;
+    } else {
+      emailHtml += `<p>لا توجد بيانات مصروفات لعرضها.</p>`;
+    }
+
+
     emailHtml += `
             <h2>الرسم البياني للدخل الشهري التراكمي (USD)</h2>
             <div class="chart-container">
@@ -193,7 +232,8 @@ const dailyReportFlow = ai.defineFlow(
       const pdfServiceInput = {
           clients: flowInput.clients || [],
           debts: (flowInput.debts || []).map(d => ({...d, dueDate: new Date(d.dueDate), paidDate: d.paidDate ? new Date(d.paidDate) : undefined })),
-          summary: flowInput.summary || { totalPaidUSD: null, totalRemainingUSD: null, totalOutstandingDebtUSD: null },
+          expenses: (flowInput.expenses || []).map(e => ({...e, expenseDate: new Date(e.expenseDate) })), // Added expenses
+          summary: flowInput.summary || { totalPaidUSD: null, totalRemainingUSD: null, totalOutstandingDebtUSD: null, totalExpensesUSD: null, zakatAmountEGP: null },
           reportDate: reportDate,
       };
       const pdfBuffer = await generatePdfReport(pdfServiceInput);
@@ -224,7 +264,7 @@ const dailyReportFlow = ai.defineFlow(
       console.error('Error in dailyReportFlow:', error);
       try {
         await sendEmail({
-          to: recipientEmail, // Send error to the intended recipient
+          to: recipientEmail,
           subject: `فشل إنشاء التقرير اليومي - ${reportDateStr}`,
           text: `حدث خطأ أثناء إنشاء أو إرسال تقريرك المالي اليومي:\n\n${error.message}\n\nيرجى التحقق من سجلات النظام.`,
         });
@@ -235,3 +275,4 @@ const dailyReportFlow = ai.defineFlow(
     }
   }
 );
+

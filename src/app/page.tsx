@@ -9,7 +9,7 @@ import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { format, startOfMonth as dateFnsStartOfMonth, endOfMonth as dateFnsEndOfMonth, addDays, endOfYear, differenceInDays, addMonths, subMonths, getYear, getMonth, parseISO } from 'date-fns';
 import { arSA, enUS } from 'date-fns/locale';
-import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle, Edit, Send, Coins, Clock, CalendarDays, PlusCircle, ListFilter, RefreshCw, BarChartBig, Brain } from 'lucide-react';
+import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle, Edit, Send, Coins, Clock, CalendarDays, PlusCircle, ListFilter, RefreshCw, BarChartBig, Brain, ShoppingCart } from 'lucide-react';
 import useEmblaCarousel from 'embla-carousel-react';
 import Autoplay from 'embla-carousel-autoplay';
 
@@ -110,6 +110,21 @@ const CURRENCIES = {
 } as const;
 export type Currency = keyof typeof CURRENCIES;
 
+const EXPENSE_CATEGORIES = {
+    food: 'طعام وشراب',
+    transport: 'مواصلات',
+    housing: 'سكن ومعيشة',
+    bills: 'فواتير وخدمات',
+    health: 'صحة وعلاج',
+    education: 'تعليم وتطوير',
+    entertainment: 'ترفيه وتسوق',
+    personal: 'عناية شخصية',
+    charity: 'صدقات وتبرعات',
+    other: 'مصروفات أخرى',
+} as const;
+type ExpenseCategory = keyof typeof EXPENSE_CATEGORIES;
+
+
 const ZAKAT_RATE = 0.025;
 
 const paymentSchema = z.object({
@@ -127,7 +142,7 @@ const clientSchema = z.object({
   project: z.string().min(1, { message: 'وصف المشروع مطلوب.' }),
   totalProjectCost: z.coerce.number().positive({ message: 'يجب أن تكون التكلفة الإجمالية رقمًا موجبًا.' }),
   currency: z.enum(Object.keys(CURRENCIES) as [Currency, ...Currency[]], { required_error: 'العملة مطلوبة.' }),
-  creationDate: z.date().optional(), // To store when the client was added
+  creationDate: z.date().optional(),
 });
 type Client = z.infer<typeof clientSchema>;
 
@@ -143,7 +158,7 @@ const debtSchema = z.object({
   amountRepaid: z.coerce.number().nonnegative({ message: 'المبلغ المسدد يجب أن يكون صفر أو أكثر.' }).optional(),
   paidDate: z.date().optional(),
   notes: z.string().optional(),
-  creationDate: z.date().optional(), // To store when the debt was added
+  creationDate: z.date().optional(),
 }).refine(data => {
   if ( (data.status === 'partially_paid' && (data.amountRepaid ?? 0) > 0 && !data.paidDate) || (data.status === 'paid' && !data.paidDate) ) {
     return false;
@@ -196,7 +211,7 @@ const appointmentSchema = z.object({
     location: z.string().optional(),
     notes: z.string().optional(),
     status: z.enum(Object.keys(APPOINTMENT_STATUSES) as [AppointmentStatus, ...AppointmentStatus[]]),
-    creationDate: z.date().optional(), // To store when the appointment was added
+    creationDate: z.date().optional(),
 });
 type Appointment = z.infer<typeof appointmentSchema>;
 
@@ -207,9 +222,20 @@ const taskSchema = z.object({
     priority: z.enum(['low', 'medium', 'high']).default('medium'),
     status: z.enum(Object.keys(TASK_STATUSES) as [TaskStatus, ...TaskStatus[]]),
     notes: z.string().optional(),
-    creationDate: z.date().optional(), // To store when the task was added
+    creationDate: z.date().optional(),
 });
 type Task = z.infer<typeof taskSchema>;
+
+const expenseSchema = z.object({
+  id: z.string().optional(),
+  description: z.string().min(1, { message: 'وصف المصروف مطلوب.' }),
+  amount: z.coerce.number().positive({ message: 'مبلغ المصروف يجب أن يكون رقمًا موجبًا.' }),
+  currency: z.enum(Object.keys(CURRENCIES) as [Currency, ...Currency[]], { required_error: 'عملة المصروف مطلوبة.' }),
+  category: z.enum(Object.keys(EXPENSE_CATEGORIES) as [ExpenseCategory, ...ExpenseCategory[]], { required_error: 'فئة المصروف مطلوبة.' }),
+  expenseDate: z.date({ required_error: 'تاريخ المصروف مطلوب.' }),
+  creationDate: z.date().optional(),
+});
+type Expense = z.infer<typeof expenseSchema>;
 
 
 const paymentFormSchema = z.object({
@@ -235,6 +261,7 @@ const PAYMENT_STORAGE_KEY = 'clientTrackerDataV4_Payments';
 const DEBT_STORAGE_KEY = 'clientTrackerDataV4_Debts';
 const APPOINTMENT_STORAGE_KEY = 'clientTrackerDataV1_Appointments';
 const TASK_STORAGE_KEY = 'clientTrackerDataV1_Tasks';
+const EXPENSE_STORAGE_KEY = 'clientTrackerDataV1_Expenses';
 const SELECTED_DATE_STORAGE_KEY = 'clientTrackerSelectedDateV1';
 
 
@@ -249,7 +276,7 @@ const calculateTotalPaid = (clientId: string, payments: Payment[], selectedMonth
         const paymentDate = p.paymentDate;
         const isInSelectedMonth = selectedMonth
             ? paymentDate.getFullYear() === selectedMonth.getFullYear() && paymentDate.getMonth() === selectedMonth.getMonth()
-            : true; // If no month selected, include all
+            : true;
         return p.clientId === clientId && isInSelectedMonth;
     })
     .reduce((sum, p) => sum + p.amount, 0);
@@ -293,7 +320,7 @@ const formatDateAr = (date: Date | null | undefined) => {
 };
 const formatDateEn = (date: Date | null | undefined) => {
     if (!date || isNaN(date.getTime())) return '-';
-    return format(date, 'MMM d, yyyy', { locale: enUS }); // English format
+    return format(date, 'MMM d, yyyy', { locale: enUS });
 };
 
 
@@ -335,11 +362,13 @@ const ClientTracker: FC = () => {
   const [debts, setDebts] = useState<Debt[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
 
   const [clientSortConfig, setClientSortConfig] = useState<{ key: keyof Client | 'derivedStatus' | 'derivedAmountPaid' | 'derivedRemainingAmount' | 'derivedPaymentDate' | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
   const [debtSortConfig, setDebtSortConfig] = useState<{ key: keyof Debt | 'remainingDebt' | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
   const [appointmentSortConfig, setAppointmentSortConfig] = useState<{ key: keyof Appointment | null; direction: 'ascending' | 'descending' }>({ key: 'date', direction: 'ascending' });
   const [taskSortConfig, setTaskSortConfig] = useState<{ key: keyof Task | null; direction: 'ascending' | 'descending' }>({ key: 'dueDate', direction: 'ascending' });
+  const [expenseSortConfig, setExpenseSortConfig] = useState<{ key: keyof Expense | null; direction: 'ascending' | 'descending' }>({ key: 'expenseDate', direction: 'descending' });
 
 
   const { toast } = useToast();
@@ -352,7 +381,7 @@ const ClientTracker: FC = () => {
   const [editingRepaymentForDebtId, setEditingRepaymentForDebtId] = useState<string | null>(null);
   const [isSendingReport, setIsSendingReport] = useState(false);
 
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date()); // For month navigation
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   const [isAnalyzingFinancials, setIsAnalyzingFinancials] = useState(false);
   const [financialAnalysisResult, setFinancialAnalysisResult] = useState<FinancialAnalysisOutput | null>(null);
@@ -406,8 +435,8 @@ const ClientTracker: FC = () => {
     fetchRates();
   }, []);
 
-  const loadDataFromLocalStorage = <T extends { creationDate?: Date | string }>(key: string, schema: z.ZodType<T>, dateFields: (keyof T)[] = []): T[] => {
-    if (typeof window === 'undefined') return []; // Guard for SSR
+  const loadDataFromLocalStorage = <T extends { creationDate?: Date | string, expenseDate?: Date | string }>(key: string, schema: z.ZodType<T>, dateFields: (keyof T)[] = []): T[] => {
+    if (typeof window === 'undefined') return [];
     const storedData = localStorage.getItem(key);
     if (storedData) {
         try {
@@ -416,17 +445,19 @@ const ClientTracker: FC = () => {
                 dateFields.forEach(dateField => {
                     if (newItem[dateField] && typeof newItem[dateField] === 'string') {
                         const parsedDate = new Date(newItem[dateField]);
-                        newItem[dateField] = isNaN(parsedDate.getTime()) ? (dateField === 'paidDate' || dateField === 'dueDate' || dateField === 'paymentDate' ? new Date() : undefined) : parsedDate;
+                        newItem[dateField] = isNaN(parsedDate.getTime()) ? (dateField === 'paidDate' || dateField === 'dueDate' || dateField === 'paymentDate' || dateField === 'expenseDate' ? new Date() : undefined) : parsedDate;
                     } else if (newItem[dateField] && !(newItem[dateField] instanceof Date)) {
-                         newItem[dateField] = (dateField === 'paidDate' || dateField === 'dueDate' || dateField === 'paymentDate' ? new Date() : undefined);
+                         newItem[dateField] = (dateField === 'paidDate' || dateField === 'dueDate' || dateField === 'paymentDate' || dateField === 'expenseDate' ? new Date() : undefined);
                     }
                 });
-                // Add creationDate if missing or convert if string
                 if (!newItem.creationDate) {
-                    newItem.creationDate = new Date(); // Default to now if not present
+                    newItem.creationDate = new Date();
                 } else if (typeof newItem.creationDate === 'string') {
                     const parsedCreationDate = new Date(newItem.creationDate);
                     newItem.creationDate = isNaN(parsedCreationDate.getTime()) ? new Date() : parsedCreationDate;
+                }
+                 if (key === EXPENSE_STORAGE_KEY && !newItem.expenseDate) { // Ensure expenseDate defaults correctly
+                    newItem.expenseDate = new Date();
                 }
                 return newItem;
             });
@@ -453,6 +484,8 @@ const ClientTracker: FC = () => {
     setDebts(loadDataFromLocalStorage(DEBT_STORAGE_KEY, debtSchema, ['dueDate', 'paidDate', 'creationDate']));
     setAppointments(loadDataFromLocalStorage(APPOINTMENT_STORAGE_KEY, appointmentSchema, ['date', 'creationDate']));
     setTasks(loadDataFromLocalStorage(TASK_STORAGE_KEY, taskSchema, ['dueDate', 'creationDate']));
+    setExpenses(loadDataFromLocalStorage(EXPENSE_STORAGE_KEY, expenseSchema, ['expenseDate', 'creationDate']));
+
 
     const storedDate = localStorage.getItem(SELECTED_DATE_STORAGE_KEY);
     if (storedDate) {
@@ -468,6 +501,7 @@ const ClientTracker: FC = () => {
   useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(DEBT_STORAGE_KEY, JSON.stringify(debts)); }, [debts, isMounted]);
   useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(APPOINTMENT_STORAGE_KEY, JSON.stringify(appointments)); }, [appointments, isMounted]);
   useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(tasks)); }, [tasks, isMounted]);
+  useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(EXPENSE_STORAGE_KEY, JSON.stringify(expenses)); }, [expenses, isMounted]);
   useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(SELECTED_DATE_STORAGE_KEY, selectedDate.toISOString());}, [selectedDate, isMounted]);
 
 
@@ -478,6 +512,7 @@ const ClientTracker: FC = () => {
   const emailReportForm = useForm<EmailReportFormData>({ resolver: zodResolver(emailReportFormSchema), defaultValues: { recipientEmail: 'husseinghazala39@gmail.com' }});
   const appointmentForm = useForm<Appointment>({ resolver: zodResolver(appointmentSchema), defaultValues: { title: '', date: new Date(), time: '09:00', status: 'scheduled' } });
   const taskForm = useForm<Task>({ resolver: zodResolver(taskSchema), defaultValues: { description: '', priority: 'medium', status: 'todo' } });
+  const expenseForm = useForm<Expense>({ resolver: zodResolver(expenseSchema), defaultValues: { description: '', amount: 0, currency: 'EGP', category: 'other', expenseDate: selectedDate }});
 
 
   const debtStatus = debtForm.watch('status');
@@ -501,6 +536,10 @@ const ClientTracker: FC = () => {
       }
   }, [debtStatus, debtForm]);
 
+  useEffect(() => {
+    expenseForm.setValue('expenseDate', selectedDate);
+  }, [selectedDate, expenseForm]);
+
   const onClientSubmit = useCallback((values: Client) => {
       const newClient = { ...values, id: crypto.randomUUID(), creationDate: selectedDate };
       setClients((prev) => [...prev, newClient]);
@@ -511,9 +550,9 @@ const ClientTracker: FC = () => {
   const onPaymentSubmit = useCallback((clientId: string, clientCurrency: Currency) => (values: PaymentFormData) => {
         const client = clients.find(c => c.id === clientId);
         if (!client) return;
-        const totalPaid = calculateTotalPaid(clientId, payments, selectedDate); // Pass selectedDate
+        const totalPaid = calculateTotalPaid(clientId, payments, selectedDate);
         const remaining = calculateClientRemainingAmount(client.totalProjectCost, totalPaid);
-        if (values.paymentAmount > remaining && client.totalProjectCost - totalPaid > 0) { // Only error if there's an actual remaining amount
+        if (values.paymentAmount > remaining && client.totalProjectCost - totalPaid > 0) {
              paymentForm.setError('paymentAmount', { type: 'manual', message: `مبلغ الدفعة يتجاوز المبلغ المتبقي (${formatCurrency(remaining, clientCurrency)}).` });
              return;
         }
@@ -522,7 +561,7 @@ const ClientTracker: FC = () => {
         showToast({ title: 'تمت إضافة دفعة', description: `تم تسجيل دفعة لـ ${client.name}.` });
         paymentForm.reset();
         setAddingPaymentForClientId(null);
-    }, [clients, payments, showToast, paymentForm, selectedDate]); // Added selectedDate
+    }, [clients, payments, showToast, paymentForm, selectedDate]);
 
   const onDebtSubmit = useCallback((values: Debt) => {
        let finalValues = { ...values, creationDate: selectedDate };
@@ -588,6 +627,13 @@ const ClientTracker: FC = () => {
       taskForm.reset({ description: '', priority: 'medium', status: 'todo' });
   }, [showToast, taskForm, selectedDate]);
 
+  const onExpenseSubmit = useCallback((values: Expense) => {
+      const newExpense = { ...values, id: crypto.randomUUID(), creationDate: selectedDate, expenseDate: values.expenseDate || selectedDate };
+      setExpenses((prev) => [...prev, newExpense]);
+      showToast({ title: 'تمت إضافة المصروف', description: `تمت إضافة مصروف "${values.description}" بنجاح.` });
+      expenseForm.reset({ description: '', amount: 0, currency: 'EGP', category: 'other', expenseDate: selectedDate });
+  }, [showToast, expenseForm, selectedDate]);
+
 
   const deleteClient = useCallback((id: string) => {
     setClients(prev => prev.filter(c => c.id !== id));
@@ -617,11 +663,16 @@ const ClientTracker: FC = () => {
     showToast({ title: "تم حذف المهمة", variant: "destructive" });
   }, [showToast]);
 
+  const deleteExpense = useCallback((id: string) => {
+    setExpenses(prev => prev.filter(e => e.id !== id));
+    showToast({ title: 'تم حذف المصروف', variant: 'destructive' });
+  }, [showToast]);
+
 
   const handleClientStatusChange = useCallback((clientId: string, newStatusTarget: PaymentStatus) => {
         const client = clients.find(c => c.id === clientId);
         if (!client) return;
-        const totalPaid = calculateTotalPaid(clientId, payments, selectedDate); // Pass selectedDate
+        const totalPaid = calculateTotalPaid(clientId, payments, selectedDate);
         const currentStatus = determinePaymentStatus(totalPaid, client.totalProjectCost);
         let openPaymentForm = false;
         let toastTitle = '';
@@ -641,11 +692,11 @@ const ClientTracker: FC = () => {
                 toastTitle = 'لا يمكن التحديث إلى "تم الدفع"';
                 toastDescription = `العميل ${client.name} لم يسدد التكلفة الإجمالية بعد. المبلغ المتبقي ${formatCurrency(client.totalProjectCost - totalPaid, client.currency)}. قم بإضافة دفعة لتغطية المبلغ المتبقي.`;
                 toastVariant = 'destructive';
-                 openPaymentForm = true; // Open form to add remaining payment
+                 openPaymentForm = true;
             } else {
                  toastTitle = 'تم التأكيد';
                  toastDescription = `حالة ${client.name} هي بالفعل "تم الدفع".`;
-                 if (addingPaymentForClientId === clientId) setAddingPaymentForClientId(null); // Close if was open
+                 if (addingPaymentForClientId === clientId) setAddingPaymentForClientId(null);
             }
         } else if (newStatusTarget === 'partially_paid') {
             openPaymentForm = true;
@@ -665,7 +716,7 @@ const ClientTracker: FC = () => {
                 toastTitle = 'لا يمكن التحديث إلى "لم يتم الدفع"';
                 toastDescription = `توجد دفعات مسجلة للعميل ${client.name}. لحذف الدفعات، قم بحذف سجلات الدفعات الفردية.`;
                 toastVariant = 'destructive';
-                openPaymentForm = false; // Don't open form if payments exist
+                openPaymentForm = false;
             } else {
                 toastTitle = 'تم التأكيد';
                 toastDescription = `حالة ${client.name} هي "لم يتم الدفع".`;
@@ -713,7 +764,7 @@ const ClientTracker: FC = () => {
           if (!updatedDebt.paidDate || originalDebt.status !== 'paid') updatedDebt.paidDate = new Date();
           toastMessage = `تم تحديث حالة الدين إلى "تم السداد".`;
           if (editingRepaymentForDebtId === debtId) setEditingRepaymentForDebtId(null);
-      } else { // partially_paid
+      } else {
             toastMessage = `تم تحديث حالة الدين إلى "سداد جزئي". يرجى تعديل المبلغ المسدد.`;
             showRepaymentForm = true;
             repaymentForm.reset({ amountRepaid: originalDebt.amountRepaid ?? 0, paidDate: originalDebt.paidDate || new Date() });
@@ -767,6 +818,8 @@ const ClientTracker: FC = () => {
   const requestDebtSort = (key: keyof Debt | 'remainingDebt') => requestSort(key, debtSortConfig, setDebtSortConfig);
   const requestAppointmentSort = (key: keyof Appointment) => requestSort(key, appointmentSortConfig, setAppointmentSortConfig);
   const requestTaskSort = (key: keyof Task) => requestSort(key, taskSortConfig, setTaskSortConfig);
+  const requestExpenseSort = (key: keyof Expense) => requestSort(key, expenseSortConfig, setExpenseSortConfig);
+
 
   const handleResetClientTable = useCallback(() => {
     setClientSortConfig({ key: null, direction: 'ascending' });
@@ -902,6 +955,34 @@ const ClientTracker: FC = () => {
       });
   }, [filteredTasks, taskSortConfig, isMounted]);
 
+  const filteredExpenses = useMemo(() => {
+    if (!isMounted) return [];
+    return expenses.filter(expense => {
+        const expenseDate = expense.expenseDate ? new Date(expense.expenseDate) : new Date(0);
+        return expenseDate.getFullYear() === selectedDate.getFullYear() &&
+               expenseDate.getMonth() === selectedDate.getMonth();
+    });
+  }, [expenses, selectedDate, isMounted]);
+
+  const sortedExpenses = useMemo(() => {
+    if (!isMounted) return [];
+    return [...filteredExpenses].sort((a, b) => {
+        if (!expenseSortConfig.key) return 0;
+        const aValue = a[expenseSortConfig.key as keyof Expense];
+        const bValue = b[expenseSortConfig.key as keyof Expense];
+        const aHasValue = aValue !== undefined && aValue !== null;
+        const bHasValue = bValue !== undefined && bValue !== null;
+        if (!aHasValue && !bHasValue) return 0;
+        if (!aHasValue) return expenseSortConfig.direction === 'ascending' ? 1 : -1;
+        if (!bHasValue) return expenseSortConfig.direction === 'ascending' ? -1 : 1;
+        let comparison = 0;
+        if (aValue instanceof Date && bValue instanceof Date) comparison = aValue.getTime() - bValue.getTime();
+        else if (typeof aValue === 'number' && typeof bValue === 'number') comparison = aValue - bValue;
+        else comparison = String(aValue).localeCompare(String(bValue), 'ar'); // Use 'ar' for Arabic string comparison
+        return expenseSortConfig.direction === 'ascending' ? comparison : -comparison;
+    });
+  }, [filteredExpenses, expenseSortConfig, isMounted]);
+
 
   const SortableHeader = ({ columnKey, title, config, requestSortFn }: { columnKey: any, title: string, config: any, requestSortFn: (key: any) => void }) => (
     <TableHead onClick={() => requestSortFn(columnKey)} className="cursor-pointer hover:bg-muted/50">
@@ -945,10 +1026,19 @@ const ClientTracker: FC = () => {
       }, 0);
     }, [filteredDebts, isMounted, exchangeRates, rateLoading, convertToUSD]);
 
+    const totalExpensesUSD = useMemo(() => {
+        if (!isMounted || rateLoading || !exchangeRates) return null;
+        return filteredExpenses.reduce((sum, expense) => {
+            const amountInUSD = convertToUSD(expense.amount, expense.currency);
+            return sum + (amountInUSD ?? 0);
+        }, 0);
+    }, [filteredExpenses, isMounted, exchangeRates, rateLoading, convertToUSD]);
+
+
     const netWealthForZakatUSD = useMemo(() => {
-        if (totalPaidUSD === null || totalOutstandingDebtUSD === null) return null;
-        return totalPaidUSD - totalOutstandingDebtUSD;
-    }, [totalPaidUSD, totalOutstandingDebtUSD]);
+        if (totalPaidUSD === null || totalOutstandingDebtUSD === null || totalExpensesUSD === null) return null;
+        return totalPaidUSD - totalOutstandingDebtUSD - totalExpensesUSD;
+    }, [totalPaidUSD, totalOutstandingDebtUSD, totalExpensesUSD]);
 
     const zakatAmountEGP = useMemo(() => {
         if (netWealthForZakatUSD === null || netWealthForZakatUSD <= 0 || !exchangeRates || !exchangeRates.EGP) return null;
@@ -1042,6 +1132,10 @@ const ClientTracker: FC = () => {
         return (taskDueDate && taskDueDate >= currentMonthStart && taskDueDate <= currentMonthEnd) ||
                (!taskDueDate && taskCreationDate >= currentMonthStart && taskCreationDate <= currentMonthEnd);
       });
+      const expensesForReport = expenses.filter(e => {
+        const expenseDate = e.expenseDate ? new Date(e.expenseDate) : new Date(0);
+        return expenseDate >= currentMonthStart && expenseDate <= currentMonthEnd;
+      });
 
 
       const htmlChart = cumulativeChartData && cumulativeChartData.length > 1 ?
@@ -1054,10 +1148,12 @@ const ClientTracker: FC = () => {
                debts: debtsForReport.map(d => ({ ...d, creationDate: d.creationDate?.toISOString(), dueDate: d.dueDate.toISOString(), paidDate: d.paidDate?.toISOString() })),
                appointments: appointmentsForReport.map(a => ({ ...a, creationDate: a.creationDate?.toISOString(), date: a.date.toISOString()})),
                tasks: tasksForReport.map(t => ({ ...t, creationDate: t.creationDate?.toISOString(), dueDate: t.dueDate?.toISOString()})),
+               expenses: expensesForReport.map(e => ({ ...e, creationDate: e.creationDate?.toISOString(), expenseDate: e.expenseDate.toISOString()})),
                summary: {
                    totalPaidUSD: totalPaidUSD,
                    totalRemainingUSD: totalRemainingUSD,
                    totalOutstandingDebtUSD: totalOutstandingDebtUSD,
+                   totalExpensesUSD: totalExpensesUSD,
                    zakatAmountEGP: zakatAmountEGP,
                },
                reportDate: today.toISOString(),
@@ -1081,18 +1177,19 @@ const ClientTracker: FC = () => {
       } finally {
           setIsSendingReport(false);
       }
-  }, [clients, debts, appointments, tasks, totalPaidUSD, totalRemainingUSD, totalOutstandingDebtUSD, zakatAmountEGP, showToast, cumulativeChartData, payments, selectedDate, convertToUSD, exchangeRates]);
+  }, [clients, debts, appointments, tasks, expenses, totalPaidUSD, totalRemainingUSD, totalOutstandingDebtUSD, totalExpensesUSD, zakatAmountEGP, showToast, cumulativeChartData, payments, selectedDate, convertToUSD, exchangeRates]);
 
   const handleMonthChange = (newDate: Date) => {
     setSelectedDate(newDate);
-    setFinancialAnalysisResult(null); // Clear previous analysis when month changes
+    setFinancialAnalysisResult(null);
     setFinancialAnalysisError(null);
+    expenseForm.setValue('expenseDate', newDate); // Update default expense date on month change
   };
 
   const prepareFinancialAnalysisInput = useCallback((): FinancialAnalysisInput | null => {
-    if (!isMounted || rateLoading || !exchangeRates || (!clients.length && !payments.length)) {
-        if (isMounted && (!clients.length && !payments.length)) {
-          showToast({ title: "بيانات غير كافية للتحليل", description: "الرجاء إضافة بعض العملاء والدفعات أولاً.", variant: "destructive" });
+    if (!isMounted || rateLoading || !exchangeRates || (!clients.length && !payments.length && !expenses.length)) {
+        if (isMounted && (!clients.length && !payments.length && !expenses.length)) {
+          showToast({ title: "بيانات غير كافية للتحليل", description: "الرجاء إضافة بعض العملاء/الدفعات/المصروفات أولاً.", variant: "destructive" });
         } else if (isMounted && (rateLoading || !exchangeRates)){
           showToast({ title: "جاري تحميل أسعار الصرف", description: "يرجى الانتظار حتى يتم تحميل أسعار الصرف قبل التحليل.", variant: "destructive" });
         }
@@ -1101,31 +1198,44 @@ const ClientTracker: FC = () => {
 
     const monthlyMap: { [key: string]: Partial<MonthlySummary> & { year: number; month: string } } = {};
 
-
-    payments.forEach(payment => {
-        const paymentDate = new Date(payment.paymentDate);
-        const year = paymentDate.getFullYear();
-        const monthStr = String(paymentDate.getMonth() + 1).padStart(2, '0'); // 01-12
+    const ensurePeriodKey = (year: number, monthStr: string) => {
         const periodKey = `${year}-${monthStr}`;
-
         if (!monthlyMap[periodKey]) {
             monthlyMap[periodKey] = {
                 year,
                 month: monthStr,
                 totalIncomeUSD: 0,
+                totalExpensesUSD: 0, // Initialize expenses
                 numberOfClients: 0,
                 numberOfProjects: 0,
             };
         }
+        return periodKey;
+    };
 
+    payments.forEach(payment => {
+        const paymentDate = new Date(payment.paymentDate);
+        const year = paymentDate.getFullYear();
+        const monthStr = String(paymentDate.getMonth() + 1).padStart(2, '0');
+        const periodKey = ensurePeriodKey(year, monthStr);
         const incomeUSD = convertToUSD(payment.amount, payment.currency) ?? 0;
         monthlyMap[periodKey].totalIncomeUSD! += incomeUSD;
     });
 
+    expenses.forEach(expense => {
+        const expenseDate = new Date(expense.expenseDate);
+        const year = expenseDate.getFullYear();
+        const monthStr = String(expenseDate.getMonth() + 1).padStart(2, '0');
+        const periodKey = ensurePeriodKey(year, monthStr);
+        const expenseUSD = convertToUSD(expense.amount, expense.currency) ?? 0;
+        monthlyMap[periodKey].totalExpensesUSD! += expenseUSD;
+    });
+
+
     Object.keys(monthlyMap).forEach(periodKey => {
         const summary = monthlyMap[periodKey];
         const year = summary.year;
-        const monthStr = summary.month; // Already a string 'MM'
+        const monthStr = summary.month;
         const clientsInMonth = new Set<string>();
         const projectsInMonth = new Set<string>();
 
@@ -1149,7 +1259,7 @@ const ClientTracker: FC = () => {
     });
 
     if (allMonthlySummaries.length === 0) {
-         showToast({ title: "لا توجد بيانات دفعات للتحليل", description: "الرجاء إضافة بعض الدفعات أولاً.", variant: "destructive" });
+         showToast({ title: "لا توجد بيانات دفعات أو مصروفات للتحليل", description: "الرجاء إضافة بعض البيانات أولاً.", variant: "destructive" });
          return null;
     }
 
@@ -1157,10 +1267,10 @@ const ClientTracker: FC = () => {
         allMonthlySummaries,
         currentMonthFocus: {
             year: selectedDate.getFullYear(),
-            month: String(selectedDate.getMonth() + 1).padStart(2, '0'), // Format to 'MM'
+            month: String(selectedDate.getMonth() + 1).padStart(2, '0'),
         },
     };
-  }, [isMounted, rateLoading, exchangeRates, clients, payments, convertToUSD, selectedDate, showToast]);
+  }, [isMounted, rateLoading, exchangeRates, clients, payments, expenses, convertToUSD, selectedDate, showToast]);
 
   const handleAnalyzeFinancials = useCallback(async () => {
     const analysisInput = prepareFinancialAnalysisInput();
@@ -1250,9 +1360,10 @@ const ClientTracker: FC = () => {
         </Card>
 
         <Tabs defaultValue="clients" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-8">
+            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 mb-8">
                 <TabsTrigger value="clients">العملاء والمشاريع</TabsTrigger>
                 <TabsTrigger value="debts">الديون والمستحقات</TabsTrigger>
+                <TabsTrigger value="expenses">المصروفات</TabsTrigger>
                 <TabsTrigger value="appointments_tasks">المواعيد والمهام</TabsTrigger>
             </TabsList>
 
@@ -1505,6 +1616,72 @@ const ClientTracker: FC = () => {
                 </Card>
             </TabsContent>
 
+            <TabsContent value="expenses">
+                <Card className="mb-8 shadow-lg">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-foreground"><ShoppingCart className="h-5 w-5 text-primary"/> إضافة مصروف جديد</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                        <Form {...expenseForm}>
+                            <form onSubmit={expenseForm.handleSubmit(onExpenseSubmit)} className="space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <FormField control={expenseForm.control} name="description" render={({ field }) => (<FormItem><FormLabel>وصف المصروف</FormLabel><FormControl><Input placeholder="مثال: فاتورة كهرباء" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={expenseForm.control} name="amount" render={({ field }) => (<FormItem><FormLabel>المبلغ</FormLabel><FormControl><Input type="number" placeholder="المبلغ" {...field} step="0.01" /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={expenseForm.control} name="currency" render={({ field }) => (<FormItem><FormLabel>العملة</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="اختر العملة" /></SelectTrigger></FormControl><SelectContent>{Object.entries(CURRENCIES).map(([code, name]) => (<SelectItem key={code} value={code}>{name} ({code})</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
+                                    <FormField control={expenseForm.control} name="category" render={({ field }) => (<FormItem><FormLabel>الفئة</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="اختر الفئة" /></SelectTrigger></FormControl><SelectContent>{Object.entries(EXPENSE_CATEGORIES).map(([key, name]) => (<SelectItem key={key} value={key}>{name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
+                                    <FormField control={expenseForm.control} name="expenseDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel className="mb-2">تاريخ المصروف</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}>{field.value ? format(field.value, 'PPP', { locale: arSA }) : <span>اختر تاريخًا</span>}<CalendarIcon className="ml-auto h-4 w-4 opacity-50 rtl:mr-auto rtl:ml-0" /></Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={arSA} /></PopoverContent></Popover><FormMessage /></FormItem>)} />
+                                </div>
+                                <Button type="submit" className="mt-6 w-full md:w-auto"><PlusCircle className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" /> إضافة مصروف</Button>
+                            </form>
+                        </Form>
+                    </CardContent>
+                </Card>
+
+                <Card className="shadow-lg">
+                    <CardHeader><CardTitle className="text-foreground">سجلات مصروفات شهر {format(selectedDate, "MMMM yyyy", { locale: arSA })}</CardTitle></CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableCaption>قائمة بالمصروفات المسجلة للشهر المحدد.</TableCaption>
+                            <TableHeader>
+                                <TableRow>
+                                    <SortableHeader columnKey="description" title="الوصف" config={expenseSortConfig} requestSortFn={requestExpenseSort} />
+                                    <SortableHeader columnKey="amount" title="المبلغ" config={expenseSortConfig} requestSortFn={requestExpenseSort} />
+                                    <SortableHeader columnKey="currency" title="العملة" config={expenseSortConfig} requestSortFn={requestExpenseSort} />
+                                    <SortableHeader columnKey="category" title="الفئة" config={expenseSortConfig} requestSortFn={requestExpenseSort} />
+                                    <SortableHeader columnKey="expenseDate" title="التاريخ" config={expenseSortConfig} requestSortFn={requestExpenseSort} />
+                                    <TableHead className="text-left">الإجراءات</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {sortedExpenses.length > 0 ? (
+                                    sortedExpenses.map((expense) => (
+                                        <TableRow key={expense.id}>
+                                            <TableCell className="text-foreground">{expense.description}</TableCell>
+                                            <TableCell className="text-red-600 dark:text-red-400">{formatCurrency(expense.amount, expense.currency)}</TableCell>
+                                            <TableCell className="text-muted-foreground">{CURRENCIES[expense.currency]}</TableCell>
+                                            <TableCell className="text-muted-foreground">{EXPENSE_CATEGORIES[expense.category]}</TableCell>
+                                            <TableCell className="text-muted-foreground">{formatDateAr(expense.expenseDate)}</TableCell>
+                                            <TableCell className="text-left">
+                                                <Button variant="ghost" size="icon" onClick={() => expense.id && deleteExpense(expense.id)} className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                ) : (
+                                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">لا توجد مصروفات مسجلة لهذا الشهر.</TableCell></TableRow>
+                                )}
+                            </TableBody>
+                             <TableFooter className="bg-muted/30 dark:bg-muted/20">
+                               <TableRow>
+                                 <TableCell colSpan={5} className="font-semibold text-right text-foreground">إجمالي المصروفات (دولار)</TableCell>
+                                 <TableCell className="font-bold text-red-600 dark:text-red-400">{rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : totalExpensesUSD !== null ? formatCurrency(totalExpensesUSD, 'USD') : rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}</TableCell>
+                               </TableRow>
+                             </TableFooter>
+                        </Table>
+                    </CardContent>
+                </Card>
+            </TabsContent>
+
+
             <TabsContent value="appointments_tasks">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <Card className="shadow-lg">
@@ -1629,7 +1806,7 @@ const ClientTracker: FC = () => {
                     التحليل المالي بواسطة الذكاء الاصطناعي
                 </CardTitle>
                 <CardDescription className="text-purple-700 dark:text-purple-400 mt-1">
-                    احصل على تحليل لبياناتك المالية ومقارنتها عبر الشهور بواسطة نموذج لغوي متقدم.
+                    احصل على تحليل لبياناتك المالية (الدخل والمصروفات) ومقارنتها عبر الشهور بواسطة نموذج لغوي متقدم.
                 </CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
@@ -1686,15 +1863,16 @@ const ClientTracker: FC = () => {
                     حساب زكاة المال (تقديري لشهر {format(selectedDate, "MMMM yyyy", { locale: arSA })})
                 </CardTitle>
                  <CardDescription className="text-green-700 dark:text-green-400 mt-1">
-                    الزكاة تحسب بنسبة 2.5% من صافي الثروة (الدخل بالدولار - الديون بالدولار)، ثم تحول للجنيه. هذا حساب تقديري للشهر المحدد.
+                    الزكاة تحسب بنسبة 2.5% من صافي الثروة (الدخل بالدولار - الديون بالدولار - المصروفات بالدولار)، ثم تحول للجنيه. هذا حساب تقديري للشهر المحدد.
                 </CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
                 {rateLoading ? <div className="flex items-center"><Loader2 className="h-5 w-5 animate-spin mr-2 rtl:ml-2 rtl:mr-0" />جاري تحميل...</div> : rateError || !exchangeRates || !exchangeRates.EGP ? <Alert variant="destructive"><AlertCircle className="h-4 w-4"/><AlertTitle>خطأ</AlertTitle><AlertDescription>لا يمكن حساب الزكاة (خطأ في سعر الصرف).</AlertDescription></Alert> : netWealthForZakatUSD !== null && netWealthForZakatUSD > 0 && zakatAmountEGP !== null ? (
                     <div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                             <div><p className="text-sm text-muted-foreground">إجمالي الدخل (دولار):</p><p className="text-lg font-semibold text-green-700 dark:text-green-400">{formatCurrency(totalPaidUSD, 'USD')}</p></div>
                             <div><p className="text-sm text-muted-foreground">إجمالي الديون (دولار):</p><p className="text-lg font-semibold text-red-700 dark:text-red-400">{formatCurrency(totalOutstandingDebtUSD, 'USD')}</p></div>
+                            <div><p className="text-sm text-muted-foreground">إجمالي المصروفات (دولار):</p><p className="text-lg font-semibold text-orange-600 dark:text-orange-400">{formatCurrency(totalExpensesUSD, 'USD')}</p></div>
                         </div>
                          <div className="mb-4"><p className="text-sm text-muted-foreground">صافي الثروة (دولار):</p><p className="text-lg font-semibold text-blue-700 dark:text-blue-400">{formatCurrency(netWealthForZakatUSD, 'USD')}</p></div>
                          <div className="mb-2"><p className="text-sm text-muted-foreground">سعر الصرف (دولار/جنيه):</p><p className="text-lg font-semibold text-foreground">1 USD = {exchangeRates.EGP.toLocaleString('en-US', {minimumFractionDigits: 2})} EGP</p></div>
@@ -1708,3 +1886,4 @@ const ClientTracker: FC = () => {
 };
 
 export default ClientTracker;
+

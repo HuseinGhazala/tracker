@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview Service for generating Excel reports using exceljs.
@@ -16,13 +17,30 @@ const CURRENCIES_MAP = {
     EUR: 'يورو',
 } as const;
 
+const EXPENSE_CATEGORIES_MAP = {
+    food: 'طعام وشراب',
+    transport: 'مواصلات',
+    housing: 'سكن ومعيشة',
+    bills: 'فواتير وخدمات',
+    health: 'صحة وعلاج',
+    education: 'تعليم وتطوير',
+    entertainment: 'ترفيه وتسوق',
+    personal: 'عناية شخصية',
+    charity: 'صدقات وتبرعات',
+    other: 'مصروفات أخرى',
+} as const;
+type ExpenseCategoryKey = keyof typeof EXPENSE_CATEGORIES_MAP;
+
+
 interface ReportData {
-  clients: any[]; // Consider using a more specific Client type
-  debts: any[];   // Consider using a more specific Debt type
+  clients: any[];
+  debts: any[];
+  expenses: any[]; // Added expenses
   summary: {
     totalPaidUSD: number | null;
     totalRemainingUSD: number | null;
     totalOutstandingDebtUSD: number | null;
+    totalExpensesUSD: number | null; // Added totalExpensesUSD
   };
   reportDate: Date;
 }
@@ -47,7 +65,7 @@ export async function generateExcelReport(data: ReportData): Promise<Buffer> {
   ];
   const clientHeaderRow = clientsSheet.getRow(1);
   clientHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  clientHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF008080' } }; // Teal
+  clientHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF008080' } };
   clientHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
 
 
@@ -96,11 +114,38 @@ export async function generateExcelReport(data: ReportData): Promise<Buffer> {
       currency: CURRENCIES_MAP[debt.currency as Currency] || debt.currency,
       amountRepaid: debt.amountRepaid || 0,
       remainingDebt: remainingDebt,
-      status: debt.status, // Ideally map to Arabic status
+      status: debt.status,
       dueDate: debt.dueDate ? formatDateFn(new Date(debt.dueDate), 'yyyy-MM-dd', { locale: arSA }) : 'N/A',
       notes: debt.notes || '-',
     });
   });
+
+  // --- Expenses Sheet ---
+  const expensesSheet = workbook.addWorksheet('المصروفات');
+  expensesSheet.views = [{ rightToLeft: true }];
+
+  expensesSheet.columns = [
+    { header: 'الوصف', key: 'description', width: 40 },
+    { header: 'المبلغ', key: 'amount', width: 20, style: { numFmt: '#,##0.00' } },
+    { header: 'العملة', key: 'currency', width: 15 },
+    { header: 'الفئة', key: 'category', width: 25 },
+    { header: 'التاريخ', key: 'expenseDate', width: 20 },
+  ];
+  const expenseHeaderRow = expensesSheet.getRow(1);
+  expenseHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  expenseHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF008080' } };
+  expenseHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  data.expenses.forEach((expense: any) => {
+    expensesSheet.addRow({
+      description: expense.description,
+      amount: expense.amount,
+      currency: CURRENCIES_MAP[expense.currency as Currency] || expense.currency,
+      category: EXPENSE_CATEGORIES_MAP[expense.category as ExpenseCategoryKey] || expense.category,
+      expenseDate: expense.expenseDate ? formatDateFn(new Date(expense.expenseDate), 'yyyy-MM-dd', { locale: arSA }) : 'N/A',
+    });
+  });
+
 
   // --- Summary Sheet ---
   const summarySheet = workbook.addWorksheet('الملخص المالي');
@@ -113,16 +158,12 @@ export async function generateExcelReport(data: ReportData): Promise<Buffer> {
   summarySheet.getRow(1).alignment = { horizontal: 'center' };
 
 
-  summarySheet.addRow([]); // Spacer
+  summarySheet.addRow([]);
 
   const addSummaryRow = (label: string, value: number | null, currencyCode: string = 'USD') => {
     const row = summarySheet.addRow([label, value]);
     row.getCell(1).font = { bold: true };
     if (value !== null) {
-      // For Excel, it's often better to keep numbers as numbers and apply formatting.
-      // The currency symbol can be part of the number format string in Excel.
-      // Example numFmt: '$#,##0.00' for USD. For dynamic currencies, this is trickier with simple numFmt.
-      // We'll display as text for simplicity here, or one could use conditional formatting in Excel.
       row.getCell(2).value = `${value.toFixed(2)} ${currencyCode}`;
       row.getCell(2).alignment = { horizontal: 'right' };
     } else {
@@ -134,15 +175,15 @@ export async function generateExcelReport(data: ReportData): Promise<Buffer> {
   addSummaryRow('إجمالي الدخل المقبوض (دولار أمريكي مقدر):', data.summary.totalPaidUSD);
   addSummaryRow('إجمالي المبالغ المتبقية من العملاء (دولار أمريكي مقدر):', data.summary.totalRemainingUSD);
   addSummaryRow('إجمالي الديون المستحقة عليك (دولار أمريكي مقدر):', data.summary.totalOutstandingDebtUSD);
+  addSummaryRow('إجمالي المصروفات (دولار أمريكي مقدر):', data.summary.totalExpensesUSD); // Added total expenses
 
   summarySheet.getColumn(1).width = 50;
   summarySheet.getColumn(2).width = 30;
 
-  // Auto-width for columns can be resource-intensive.
-  // Consider setting fixed widths or more targeted auto-sizing if performance is an issue.
-  [clientsSheet, debtsSheet].forEach(sheet => {
+
+  [clientsSheet, debtsSheet, expensesSheet].forEach(sheet => {
     sheet.columns.forEach(column => {
-      if (!column.width) { // If width is not already set by header definition
+      if (!column.width) {
         let maxLength = 0;
         column.eachCell!({ includeEmpty: true }, cell => {
           const columnLength = cell.value ? String(cell.value).length : 0;
@@ -150,11 +191,12 @@ export async function generateExcelReport(data: ReportData): Promise<Buffer> {
             maxLength = columnLength;
           }
         });
-        column.width = maxLength < 10 ? 10 : maxLength + 2; // Basic auto-width
+        column.width = maxLength < 10 ? 10 : maxLength + 2;
       }
     });
   });
 
   const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer); // Convert ArrayBuffer to Buffer
+  return Buffer.from(buffer);
 }
+
