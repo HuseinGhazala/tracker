@@ -10,8 +10,9 @@ import * as z from 'zod';
 import { format, startOfMonth as dateFnsStartOfMonth, endOfMonth as dateFnsEndOfMonth, addDays, endOfYear, differenceInDays, addMonths, subMonths, getYear, getMonth, parseISO } from 'date-fns';
 import { arSA, enUS } from 'date-fns/locale';
 import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle, Edit, Send, Coins, Clock, CalendarDays, PlusCircle, ListFilter, RefreshCw, BarChartBig, Brain, ShoppingCart } from 'lucide-react';
-import useEmblaCarousel from 'embla-carousel-react';
-import Autoplay from 'embla-carousel-autoplay';
+// Removed Embla Carousel imports as they are no longer used by the exchange rate display
+// import useEmblaCarousel from 'embla-carousel-react';
+// import Autoplay from 'embla-carousel-autoplay';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -336,19 +337,24 @@ const calculateDebtRemainingAmount = (debt: Partial<Debt>): number => {
 };
 
 
-const ExchangeRateSlider: FC<{ rates: ExchangeRates }> = ({ rates }) => {
-  const [emblaRef] = useEmblaCarousel({ loop: true }, [Autoplay({ delay: 3000 })]);
+const UsdToEgpRateDisplay: FC<{ rates: ExchangeRates | null }> = ({ rates }) => {
+  if (!rates || !rates.EGP) {
+    return (
+      <Card className="mb-4 shadow-sm overflow-hidden bg-secondary text-secondary-foreground">
+        <CardContent className="p-3 text-center">
+          <span className="text-muted-foreground">سعر صرف الجنيه المصري غير متاح حاليًا.</span>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const egpRate = rates.EGP;
+
   return (
     <Card className="mb-4 shadow-sm overflow-hidden bg-secondary text-secondary-foreground">
-      <CardContent className="p-3">
-        <div className="embla" ref={emblaRef}>
-          <div className="embla__container flex">
-            {Object.entries(rates).map(([currency, rate]) => (
-              <div key={currency} className="embla__slide flex-grow-0 flex-shrink-0 basis-full min-w-0 text-center">
-                <span className="font-semibold">1 USD</span> = <span className="font-semibold">{rate?.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</span> {CURRENCIES[currency as Currency] || currency}
-              </div>
-            ))}
-          </div>
+      <CardContent className="p-3 text-center">
+        <div>
+          <span className="font-semibold">1 دولار أمريكي</span> = <span className="font-semibold">{egpRate.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span> <span className="font-semibold">{CURRENCIES.EGP}</span>
         </div>
       </CardContent>
     </Card>
@@ -1168,10 +1174,8 @@ const ClientTracker: FC = () => {
       } catch (error: any) {
           console.error("Error sending manual report:", error);
           let errorMessage = `حدث خطأ أثناء إرسال التقرير: ${error.message}`;
-          if (error.message.includes('Missing credentials') || error.message.includes('Invalid login')) {
+          if (error.message.includes('Missing credentials') || error.message.includes('Invalid login') || error.message.includes('Email service is not configured')) {
               errorMessage = "فشل إرسال التقرير: بيانات اعتماد البريد الإلكتروني (Gmail) غير صحيحة أو مفقودة. يرجى التحقق من متغيري GMAIL_USER و GMAIL_APP_PASSWORD في ملف .env الخاص بك.";
-          } else if (error.message.includes('Email service is not configured')) {
-               errorMessage = "فشل إرسال التقرير: خدمة البريد الإلكتروني غير مهيأة. تأكد من أن متغيري GMAIL_USER و GMAIL_APP_PASSWORD موجودان ومُعدان بشكل صحيح في ملف .env الخاص بك.";
           }
           showToast({ title: 'فشل إرسال التقرير', description: errorMessage, variant: 'destructive' });
       } finally {
@@ -1326,7 +1330,7 @@ const ClientTracker: FC = () => {
               <AlertDescription>{rateError}</AlertDescription>
             </Alert>
           )}
-          {exchangeRates && !rateLoading && <ExchangeRateSlider rates={exchangeRates} />}
+          {exchangeRates && !rateLoading && <UsdToEgpRateDisplay rates={exchangeRates} />}
 
         <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
           <CardHeader className="bg-muted/50">
