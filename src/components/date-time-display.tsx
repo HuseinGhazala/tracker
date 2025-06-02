@@ -24,7 +24,7 @@ export const DateTimeDisplay: FC = () => {
     return (
         <Card className="mb-6 shadow-md border border-primary/20 bg-primary/5 rounded-lg">
             <CardContent className="p-4">
-                <div className="flex flex-col sm:flex-row justify-between items-center text-primary-foreground">
+                <div className="flex flex-col sm:flex-row justify-between items-center text-foreground">
                     <div className="flex items-center mb-2 sm:mb-0">
                         <CalendarDays className="h-5 w-5 mr-2 animate-pulse" />
                         <span className="font-medium">جاري تحميل التاريخ...</span>
@@ -45,7 +45,7 @@ export const DateTimeDisplay: FC = () => {
   return (
     <Card className="mb-6 shadow-md border border-primary/20 bg-primary/5 rounded-lg">
       <CardContent className="p-4">
-        <div className="flex flex-col sm:flex-row justify-between items-center text-primary-foreground">
+        <div className="flex flex-col sm:flex-row justify-between items-center text-foreground">
           <div className="flex items-center mb-2 sm:mb-0">
             <CalendarDays className="h-5 w-5 mr-2" />
             <span className="font-medium">{formattedDate}</span>
