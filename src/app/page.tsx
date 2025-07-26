@@ -9,10 +9,7 @@ import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { format, startOfMonth as dateFnsStartOfMonth, endOfMonth as dateFnsEndOfMonth, addDays, endOfYear, differenceInDays, addMonths, subMonths, getYear, getMonth, parseISO } from 'date-fns';
 import { arSA, enUS } from 'date-fns/locale';
-import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle, Edit, Send, Coins, Clock, CalendarDays, PlusCircle, ListFilter, RefreshCw, BarChartBig, Brain, ShoppingCart } from 'lucide-react';
-// Removed Embla Carousel imports as they are no longer used by the exchange rate display
-// import useEmblaCarousel from 'embla-carousel-react';
-// import Autoplay from 'embla-carousel-autoplay';
+import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle, Edit, Send, Coins, Clock, CalendarDays, PlusCircle, ListFilter, RefreshCw, BarChartBig, Brain, ShoppingCart, Target } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -62,6 +59,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Textarea } from '@/components/ui/textarea';
 import { DateTimeDisplay } from '@/components/date-time-display';
 import { MonthNavigation } from '@/components/month-navigation';
+import { Progress } from '@/components/ui/progress';
 
 
 import { sendDailyReport } from '@/ai/flows/send-daily-report-flow';
@@ -238,6 +236,15 @@ const expenseSchema = z.object({
 });
 type Expense = z.infer<typeof expenseSchema>;
 
+const savingsGoalSchema = z.object({
+    id: z.string(),
+    description: z.string().min(1, { message: 'وصف الهدف مطلوب.' }),
+    targetAmount: z.coerce.number().positive({ message: 'المبلغ المستهدف يجب أن يكون رقمًا موجبًا.' }),
+    currentAmount: z.coerce.number().nonnegative().default(0),
+    currency: z.enum(Object.keys(CURRENCIES) as [Currency, ...Currency[]], { required_error: 'العملة مطلوبة.' }),
+    creationDate: z.date(),
+});
+type SavingsGoal = z.infer<typeof savingsGoalSchema>;
 
 const paymentFormSchema = z.object({
   paymentAmount: z.coerce.number().positive({ message: 'مبلغ الدفعة يجب أن يكون أكبر من صفر.' }),
@@ -256,6 +263,18 @@ const emailReportFormSchema = z.object({
 });
 type EmailReportFormData = z.infer<typeof emailReportFormSchema>;
 
+const savingsGoalFormSchema = z.object({
+    description: z.string().min(1, { message: 'وصف الهدف مطلوب.' }),
+    targetAmount: z.coerce.number().positive({ message: 'المبلغ المستهدف يجب أن يكون رقمًا موجبًا.' }),
+    currency: z.enum(Object.keys(CURRENCIES) as [Currency, ...Currency[]], { required_error: 'العملة مطلوبة.' }),
+});
+type SavingsGoalFormData = z.infer<typeof savingsGoalFormSchema>;
+
+const addSavingsFormSchema = z.object({
+    savedAmount: z.coerce.number().positive({ message: 'مبلغ الادخار يجب أن يكون أكبر من صفر.' }),
+});
+type AddSavingsFormData = z.infer<typeof addSavingsFormSchema>;
+
 
 const CLIENT_STORAGE_KEY = 'clientTrackerDataV4_Clients';
 const PAYMENT_STORAGE_KEY = 'clientTrackerDataV4_Payments';
@@ -263,6 +282,7 @@ const DEBT_STORAGE_KEY = 'clientTrackerDataV4_Debts';
 const APPOINTMENT_STORAGE_KEY = 'clientTrackerDataV1_Appointments';
 const TASK_STORAGE_KEY = 'clientTrackerDataV1_Tasks';
 const EXPENSE_STORAGE_KEY = 'clientTrackerDataV1_Expenses';
+const SAVINGS_GOAL_STORAGE_KEY = 'clientTrackerDataV1_SavingsGoals';
 const SELECTED_DATE_STORAGE_KEY = 'clientTrackerSelectedDateV1';
 
 
@@ -369,6 +389,7 @@ const ClientTracker: FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
 
   const [clientSortConfig, setClientSortConfig] = useState<{ key: keyof Client | 'derivedStatus' | 'derivedAmountPaid' | 'derivedRemainingAmount' | 'derivedPaymentDate' | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
   const [debtSortConfig, setDebtSortConfig] = useState<{ key: keyof Debt | 'remainingDebt' | null; direction: 'ascending' | 'descending' }>({ key: null, direction: 'ascending' });
@@ -385,6 +406,7 @@ const ClientTracker: FC = () => {
 
   const [addingPaymentForClientId, setAddingPaymentForClientId] = useState<string | null>(null);
   const [editingRepaymentForDebtId, setEditingRepaymentForDebtId] = useState<string | null>(null);
+  const [addingSavingsForGoalId, setAddingSavingsForGoalId] = useState<string | null>(null);
   const [isSendingReport, setIsSendingReport] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -491,7 +513,7 @@ const ClientTracker: FC = () => {
     setAppointments(loadDataFromLocalStorage(APPOINTMENT_STORAGE_KEY, appointmentSchema, ['date', 'creationDate']));
     setTasks(loadDataFromLocalStorage(TASK_STORAGE_KEY, taskSchema, ['dueDate', 'creationDate']));
     setExpenses(loadDataFromLocalStorage(EXPENSE_STORAGE_KEY, expenseSchema, ['expenseDate', 'creationDate']));
-
+    setSavingsGoals(loadDataFromLocalStorage(SAVINGS_GOAL_STORAGE_KEY, savingsGoalSchema, ['creationDate']));
 
     const storedDate = localStorage.getItem(SELECTED_DATE_STORAGE_KEY);
     if (storedDate) {
@@ -508,6 +530,7 @@ const ClientTracker: FC = () => {
   useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(APPOINTMENT_STORAGE_KEY, JSON.stringify(appointments)); }, [appointments, isMounted]);
   useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(tasks)); }, [tasks, isMounted]);
   useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(EXPENSE_STORAGE_KEY, JSON.stringify(expenses)); }, [expenses, isMounted]);
+  useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(SAVINGS_GOAL_STORAGE_KEY, JSON.stringify(savingsGoals)); }, [savingsGoals, isMounted]);
   useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(SELECTED_DATE_STORAGE_KEY, selectedDate.toISOString());}, [selectedDate, isMounted]);
 
 
@@ -519,6 +542,8 @@ const ClientTracker: FC = () => {
   const appointmentForm = useForm<Appointment>({ resolver: zodResolver(appointmentSchema), defaultValues: { title: '', date: new Date(), time: '09:00', status: 'scheduled' } });
   const taskForm = useForm<Task>({ resolver: zodResolver(taskSchema), defaultValues: { description: '', priority: 'medium', status: 'todo' } });
   const expenseForm = useForm<Expense>({ resolver: zodResolver(expenseSchema), defaultValues: { description: '', amount: 0, currency: 'EGP', category: 'other', expenseDate: selectedDate }});
+  const savingsGoalForm = useForm<SavingsGoalFormData>({ resolver: zodResolver(savingsGoalFormSchema), defaultValues: { description: '', targetAmount: 0, currency: 'EGP' } });
+  const addSavingsForm = useForm<AddSavingsFormData>({ resolver: zodResolver(addSavingsFormSchema) });
 
 
   const debtStatus = debtForm.watch('status');
@@ -640,6 +665,38 @@ const ClientTracker: FC = () => {
       expenseForm.reset({ description: '', amount: 0, currency: 'EGP', category: 'other', expenseDate: selectedDate });
   }, [showToast, expenseForm, selectedDate]);
 
+  const onSavingsGoalSubmit = useCallback((values: SavingsGoalFormData) => {
+    const newGoal: SavingsGoal = {
+        ...values,
+        id: crypto.randomUUID(),
+        currentAmount: 0,
+        creationDate: new Date(),
+    };
+    setSavingsGoals(prev => [...prev, newGoal]);
+    showToast({ title: 'تمت إضافة الهدف', description: `تمت إضافة هدف "${values.description}" بنجاح.` });
+    savingsGoalForm.reset({ description: '', targetAmount: 0, currency: 'EGP' });
+  }, [showToast, savingsGoalForm]);
+
+  const onAddSavingsSubmit = useCallback((goalId: string) => (values: AddSavingsFormData) => {
+    setSavingsGoals(prev => prev.map(goal => {
+        if (goal.id === goalId) {
+            const newCurrentAmount = goal.currentAmount + values.savedAmount;
+            if (newCurrentAmount > goal.targetAmount) {
+                addSavingsForm.setError('savedAmount', { type: 'manual', message: 'المبلغ المدخر يتجاوز المبلغ المستهدف.' });
+                return goal;
+            }
+            return { ...goal, currentAmount: newCurrentAmount };
+        }
+        return goal;
+    }));
+    const goal = savingsGoals.find(g => g.id === goalId);
+    if(goal) {
+       showToast({ title: 'تمت إضافة مبلغ مدخر', description: `تم تحديث هدف "${goal.description}".` });
+    }
+    addSavingsForm.reset();
+    setAddingSavingsForGoalId(null);
+  }, [savingsGoals, showToast, addSavingsForm]);
+
 
   const deleteClient = useCallback((id: string) => {
     setClients(prev => prev.filter(c => c.id !== id));
@@ -673,6 +730,12 @@ const ClientTracker: FC = () => {
     setExpenses(prev => prev.filter(e => e.id !== id));
     showToast({ title: 'تم حذف المصروف', variant: 'destructive' });
   }, [showToast]);
+
+  const deleteSavingsGoal = useCallback((id: string) => {
+    setSavingsGoals(prev => prev.filter(g => g.id !== id));
+    showToast({ title: 'تم حذف الهدف', variant: 'destructive' });
+    if (addingSavingsForGoalId === id) setAddingSavingsForGoalId(null);
+  }, [showToast, addingSavingsForGoalId]);
 
 
   const handleClientStatusChange = useCallback((clientId: string, newStatusTarget: PaymentStatus) => {
@@ -921,7 +984,6 @@ const ClientTracker: FC = () => {
           const bValue = b[appointmentSortConfig.key];
           const aHasValue = aValue !== undefined && aValue !== null;
           const bHasValue = bValue !== undefined && bValue !== null;
-          if (!aHasValue && !bHasValue) return 0;
           if (!aHasValue) return appointmentSortConfig.direction === 'ascending' ? 1 : -1;
           if (!bHasValue) return appointmentSortConfig.direction === 'ascending' ? -1 : 1;
           let comparison = 0;
@@ -951,7 +1013,6 @@ const ClientTracker: FC = () => {
           let bValue = b[taskSortConfig.key as keyof Task];
             const aHasValue = aValue !== undefined && aValue !== null;
             const bHasValue = bValue !== undefined && bValue !== null;
-            if (!aHasValue && !bHasValue) return 0;
             if (!aHasValue) return taskSortConfig.direction === 'ascending' ? 1 : -1;
             if (!bHasValue) return taskSortConfig.direction === 'ascending' ? -1 : 1;
             let comparison = 0;
@@ -978,7 +1039,6 @@ const ClientTracker: FC = () => {
         const bValue = b[expenseSortConfig.key as keyof Expense];
         const aHasValue = aValue !== undefined && aValue !== null;
         const bHasValue = bValue !== undefined && bValue !== null;
-        if (!aHasValue && !bHasValue) return 0;
         if (!aHasValue) return expenseSortConfig.direction === 'ascending' ? 1 : -1;
         if (!bHasValue) return expenseSortConfig.direction === 'ascending' ? -1 : 1;
         let comparison = 0;
@@ -1316,7 +1376,6 @@ const ClientTracker: FC = () => {
       <DateTimeDisplay />
       <MonthNavigation selectedDate={selectedDate} onMonthChange={handleMonthChange} />
 
-
         {rateLoading && (
             <Alert className="mb-6 bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-300 shadow">
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -1332,7 +1391,96 @@ const ClientTracker: FC = () => {
           )}
           {exchangeRates && !rateLoading && <UsdToEgpRateDisplay rates={exchangeRates} />}
 
-        <Card className="mb-8 shadow-lg border border-border rounded-lg overflow-hidden">
+      <Card className="mb-8 shadow-lg border-amber-200 dark:border-amber-700 rounded-lg overflow-hidden bg-amber-50 dark:bg-amber-900/20">
+          <CardHeader className="bg-amber-100 dark:bg-amber-800/30">
+              <CardTitle className="text-xl text-amber-800 dark:text-amber-300 flex items-center">
+                  <Target className="mr-2 h-6 w-6 rtl:ml-2 rtl:mr-0" />
+                  أهدافي الادخارية
+              </CardTitle>
+              <CardDescription className="text-amber-700 dark:text-amber-400 mt-1">
+                  تتبع أهدافك الادخارية وراقب تقدمك نحو تحقيقها.
+              </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-6">
+              <div className="mb-6 pb-6 border-b">
+                  <h3 className="text-lg font-semibold mb-4 text-foreground">إضافة هدف جديد</h3>
+                  <Form {...savingsGoalForm}>
+                      <form onSubmit={savingsGoalForm.handleSubmit(onSavingsGoalSubmit)} className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <FormField control={savingsGoalForm.control} name="description" render={({ field }) => (<FormItem><FormLabel>وصف الهدف</FormLabel><FormControl><Input placeholder="مثال: شراء لابتوب جديد" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                              <FormField control={savingsGoalForm.control} name="targetAmount" render={({ field }) => (<FormItem><FormLabel>المبلغ المستهدف</FormLabel><FormControl><Input type="number" placeholder="المبلغ" {...field} step="0.01" /></FormControl><FormMessage /></FormItem>)} />
+                              <FormField control={savingsGoalForm.control} name="currency" render={({ field }) => (<FormItem><FormLabel>العملة</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="اختر العملة" /></SelectTrigger></FormControl><SelectContent>{Object.entries(CURRENCIES).map(([code, name]) => (<SelectItem key={code} value={code}>{name} ({code})</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
+                          </div>
+                          <Button type="submit" className="mt-4 bg-amber-600 hover:bg-amber-700 text-white"><PlusCircle className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" /> أضف الهدف</Button>
+                      </form>
+                  </Form>
+              </div>
+
+              <h3 className="text-lg font-semibold mb-4 text-foreground">قائمة الأهداف</h3>
+              {savingsGoals.length > 0 ? (
+                  <div className="space-y-6">
+                      {savingsGoals.map(goal => {
+                          const remainingAmount = Math.max(0, goal.targetAmount - goal.currentAmount);
+                          const progress = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
+                          const isAddingSavings = addingSavingsForGoalId === goal.id;
+                          return (
+                              <Card key={goal.id} className="bg-background shadow-md">
+                                  <CardHeader>
+                                      <div className="flex justify-between items-start">
+                                          <CardTitle className="text-lg">{goal.description}</CardTitle>
+                                          <Button variant="ghost" size="icon" onClick={() => deleteSavingsGoal(goal.id)} className="text-destructive h-8 w-8"><Trash2 className="h-4 w-4" /></Button>
+                                      </div>
+                                  </CardHeader>
+                                  <CardContent>
+                                      <div className="mb-4">
+                                          <div className="flex justify-between text-sm text-muted-foreground mb-1">
+                                              <span>{formatCurrency(goal.currentAmount, goal.currency)}</span>
+                                              <span>{formatCurrency(goal.targetAmount, goal.currency)}</span>
+                                          </div>
+                                          <Progress value={progress} className="h-2" />
+                                          <p className="text-center text-sm mt-2 font-medium text-primary">
+                                              متبقي: {formatCurrency(remainingAmount, goal.currency)}
+                                          </p>
+                                      </div>
+
+                                      <Button variant="outline" size="sm" onClick={() => setAddingSavingsForGoalId(isAddingSavings ? null : goal.id)}>
+                                          {isAddingSavings ? 'إلغاء' : 'إضافة مبلغ مدخر'}
+                                          {!isAddingSavings && <PlusCircle className="mr-1 h-4 w-4 rtl:ml-1 rtl:mr-0" />}
+                                      </Button>
+
+                                      {isAddingSavings && (
+                                          <div className="mt-4 pt-4 border-t">
+                                              <Form {...addSavingsForm}>
+                                                  <form onSubmit={addSavingsForm.handleSubmit(onAddSavingsSubmit(goal.id))} className="flex items-end gap-2">
+                                                      <FormField
+                                                          control={addSavingsForm.control}
+                                                          name="savedAmount"
+                                                          render={({ field }) => (
+                                                              <FormItem className="flex-1">
+                                                                  <FormLabel>المبلغ المدخر ({goal.currency})</FormLabel>
+                                                                  <FormControl><Input type="number" placeholder="المبلغ" {...field} step="0.01" max={remainingAmount} /></FormControl>
+                                                                  <FormMessage />
+                                                              </FormItem>
+                                                          )}
+                                                      />
+                                                      <Button type="submit" size="sm">إضافة</Button>
+                                                  </form>
+                                              </Form>
+                                          </div>
+                                      )}
+                                  </CardContent>
+                              </Card>
+                          );
+                      })}
+                  </div>
+              ) : (
+                  <p className="text-muted-foreground text-center py-4">لم تتم إضافة أي أهداف ادخارية بعد.</p>
+              )}
+          </CardContent>
+      </Card>
+
+
+        <Card className="mb-8 shadow-sm border border-border rounded-lg overflow-hidden">
           <CardHeader className="bg-muted/50">
             <CardTitle className="text-xl text-foreground">إرسال التقرير اليومي</CardTitle>
           </CardHeader>
@@ -1890,4 +2038,3 @@ const ClientTracker: FC = () => {
 };
 
 export default ClientTracker;
-
