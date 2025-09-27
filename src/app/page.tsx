@@ -10,7 +10,7 @@ import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { format, startOfMonth as dateFnsStartOfMonth, endOfMonth as dateFnsEndOfMonth, addDays, endOfYear, differenceInDays, addMonths, subMonths, getYear, getMonth, parseISO } from 'date-fns';
 import { arSA, enUS } from 'date-fns/locale';
-import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle, Edit, Send, Coins, Clock, CalendarDays, PlusCircle, ListFilter, RefreshCw, BarChartBig, Brain, ShoppingCart, PiggyBank, Target } from 'lucide-react';
+import { CalendarIcon, ArrowUpDown, Trash2, Loader2, AlertCircle, Edit, Send, Coins, Clock, CalendarDays, PlusCircle, ListFilter, RefreshCw, BarChartBig, Brain, ShoppingCart, PiggyBank, Target, Gem } from 'lucide-react';
 
 
 import { Button } from '@/components/ui/button';
@@ -255,18 +255,43 @@ const emailReportFormSchema = z.object({
 });
 type EmailReportFormData = z.infer<typeof emailReportFormSchema>;
 
-const savingsGoalSchema = z.object({
+const savingsGoalBaseSchema = z.object({
   id: z.string(),
   name: z.string().min(1, { message: 'اسم الهدف مطلوب.' }),
+  goalType: z.enum(['currency', 'gold']),
   targetAmount: z.coerce.number().positive({ message: 'المبلغ المستهدف يجب أن يكون رقمًا موجبًا.' }),
   currentAmount: z.coerce.number().nonnegative(),
-  currency: z.enum(Object.keys(CURRENCIES) as [Currency, ...Currency[]]),
+  currency: z.enum(Object.keys(CURRENCIES) as [Currency, ...Currency[]]).optional(),
   creationDate: z.date(),
 });
+
+const savingsGoalSchema = savingsGoalBaseSchema.refine(data => {
+    if (data.goalType === 'currency' && !data.currency) {
+        return false;
+    }
+    return true;
+}, {
+    message: 'العملة مطلوبة لأهداف العملات النقدية.',
+    path: ['currency'],
+});
+
+const savingsGoalFormSchema = savingsGoalBaseSchema.omit({ id: true, currentAmount: true, creationDate: true }).refine(data => {
+    if (data.goalType === 'currency' && !data.currency) {
+        return false;
+    }
+    return true;
+}, {
+    message: 'العملة مطلوبة لأهداف العملات النقدية.',
+    path: ['currency'],
+});
+
+
 type SavingsGoal = z.infer<typeof savingsGoalSchema>;
+type SavingsGoalFormData = z.infer<typeof savingsGoalFormSchema>;
+
 
 const addSavingsFormSchema = z.object({
-  amount: z.coerce.number().positive({ message: 'مبلغ الإضافة يجب أن يكون رقمًا موجبًا.' }),
+  amount: z.coerce.number().positive({ message: 'المبلغ المضاف يجب أن يكون رقمًا موجبًا.' }),
 });
 type AddSavingsFormData = z.infer<typeof addSavingsFormSchema>;
 
@@ -277,7 +302,7 @@ const DEBT_STORAGE_KEY = 'clientTrackerDataV4_Debts';
 const APPOINTMENT_STORAGE_KEY = 'clientTrackerDataV1_Appointments';
 const TASK_STORAGE_KEY = 'clientTrackerDataV1_Tasks';
 const EXPENSE_STORAGE_KEY = 'clientTrackerDataV1_Expenses';
-const SAVINGS_GOAL_STORAGE_KEY = 'clientTrackerDataV1_SavingsGoals';
+const SAVINGS_GOAL_STORAGE_KEY = 'clientTrackerDataV2_SavingsGoals'; // Updated key
 const SELECTED_DATE_STORAGE_KEY = 'clientTrackerSelectedDateV1';
 
 
@@ -329,6 +354,15 @@ const formatCurrency = (amount: number | null | undefined, currency: Currency) =
         return `${symbols[currency] || currency} ${amount.toFixed(2)}`;
     }
 };
+
+const formatAmount = (amount: number | null | undefined, unit: 'gram' | Currency) => {
+    if (amount === null || amount === undefined) return '-';
+    if (unit === 'gram') {
+        return `${amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 3})} جرام`;
+    }
+    return formatCurrency(amount, unit);
+}
+
 
 const formatDateAr = (date: Date | null | undefined) => {
     if (!date || isNaN(date.getTime())) return '-';
@@ -484,6 +518,10 @@ const ClientTracker: FC = () => {
                  if (key === EXPENSE_STORAGE_KEY && !newItem.expenseDate) { // Ensure expenseDate defaults correctly
                     newItem.expenseDate = new Date();
                 }
+                // Migration for savings goals
+                if (key === SAVINGS_GOAL_STORAGE_KEY && !newItem.goalType) {
+                    newItem.goalType = 'currency';
+                }
                 return newItem;
             });
             return parsedData.filter((item: any) => {
@@ -540,15 +578,28 @@ const ClientTracker: FC = () => {
   const appointmentForm = useForm<Appointment>({ resolver: zodResolver(appointmentSchema), defaultValues: { title: '', date: new Date(), time: '09:00', status: 'scheduled' } });
   const taskForm = useForm<Task>({ resolver: zodResolver(taskSchema), defaultValues: { description: '', priority: 'medium', status: 'todo' } });
   const expenseForm = useForm<Expense>({ resolver: zodResolver(expenseSchema), defaultValues: { description: '', amount: 0, currency: 'EGP', category: 'other', expenseDate: selectedDate }});
-  const savingsGoalForm = useForm<Omit<SavingsGoal, 'id' | 'currentAmount' | 'creationDate'>>({ resolver: zodResolver(savingsGoalSchema.omit({ id: true, currentAmount: true, creationDate: true })), defaultValues: { name: '', targetAmount: 1000, currency: 'EGP' } });
+  const savingsGoalForm = useForm<SavingsGoalFormData>({ resolver: zodResolver(savingsGoalFormSchema), defaultValues: { name: '', goalType: 'currency', targetAmount: 1000, currency: 'EGP' } });
   const addSavingsForm = useForm<AddSavingsFormData>({ resolver: zodResolver(addSavingsFormSchema) });
-
 
 
   const debtStatus = debtForm.watch('status');
   const debtAmount = debtForm.watch('amount');
   const debtAmountRepaid = debtForm.watch('amountRepaid');
   const debtSelectedCurrency = debtForm.watch('currency');
+
+  const savingsGoalType = savingsGoalForm.watch('goalType');
+
+  useEffect(() => {
+    if (savingsGoalType === 'gold') {
+        savingsGoalForm.setValue('currency', undefined);
+        savingsGoalForm.clearErrors('currency');
+    } else {
+        if (!savingsGoalForm.getValues('currency')) {
+            savingsGoalForm.setValue('currency', 'EGP');
+        }
+    }
+  }, [savingsGoalType, savingsGoalForm]);
+
 
   useEffect(() => {
       if (debtStatus === 'outstanding') {
@@ -663,36 +714,49 @@ const ClientTracker: FC = () => {
       showToast({ title: 'تمت إضافة المصروف', description: `تمت إضافة مصروف "${values.description}" بنجاح.` });
       expenseForm.reset({ description: '', amount: 0, currency: 'EGP', category: 'other', expenseDate: selectedDate });
   }, [showToast, expenseForm, selectedDate]);
-  
-  const onSavingsGoalSubmit = useCallback((values: Omit<SavingsGoal, 'id' | 'currentAmount' | 'creationDate'>) => {
+
+  const onSavingsGoalSubmit = useCallback((values: SavingsGoalFormData) => {
+    let finalValues: Partial<SavingsGoalFormData> = { ...values };
+    if (finalValues.goalType === 'gold') {
+        finalValues.currency = undefined;
+    }
     const newGoal: SavingsGoal = {
-        ...values,
+        ...(finalValues as SavingsGoalFormData),
         id: crypto.randomUUID(),
         currentAmount: 0,
         creationDate: new Date(),
     };
     setSavingsGoals(prev => [...prev, newGoal]);
     showToast({ title: 'تمت إضافة هدف ادخاري', description: `تم إنشاء هدف "${values.name}" بنجاح.` });
-    savingsGoalForm.reset({ name: '', targetAmount: 1000, currency: 'EGP' });
+    savingsGoalForm.reset({ name: '', goalType: 'currency', targetAmount: 1000, currency: 'EGP' });
   }, [showToast, savingsGoalForm]);
 
   const onAddSavingsSubmit = useCallback((goalId: string) => (values: AddSavingsFormData) => {
+      let errorOccurred = false;
       setSavingsGoals(prev => prev.map(goal => {
           if (goal.id === goalId) {
               const newCurrentAmount = goal.currentAmount + values.amount;
               if (newCurrentAmount > goal.targetAmount) {
                   addSavingsForm.setError('amount', { type: 'manual', message: 'المبلغ المضاف يتجاوز المبلغ المستهدف.' });
+                  errorOccurred = true;
                   return goal;
               }
-              showToast({ title: 'تمت إضافة مبلغ', description: `تمت إضافة ${formatCurrency(values.amount, goal.currency)} إلى هدف "${goal.name}".` });
               return { ...goal, currentAmount: newCurrentAmount };
           }
           return goal;
       }));
-      addSavingsForm.reset();
-      setAddingToSavingsGoalId(null);
-  }, [addSavingsForm, showToast]);
 
+      if (!errorOccurred) {
+          const goal = savingsGoals.find(g => g.id === goalId);
+          if (goal) {
+              const unit = goal.goalType === 'gold' ? 'جرام' : goal.currency;
+              const amountDisplay = goal.goalType === 'gold' ? values.amount : formatCurrency(values.amount, goal.currency!);
+              showToast({ title: 'تمت إضافة مبلغ', description: `تمت إضافة ${amountDisplay} إلى هدف "${goal.name}".` });
+          }
+          addSavingsForm.reset();
+          setAddingToSavingsGoalId(null);
+      }
+  }, [addSavingsForm, showToast, savingsGoals]);
 
 
   const deleteClient = useCallback((id: string) => {
@@ -727,7 +791,7 @@ const ClientTracker: FC = () => {
     setExpenses(prev => prev.filter(e => e.id !== id));
     showToast({ title: 'تم حذف المصروف', variant: 'destructive' });
   }, [showToast]);
-  
+
   const deleteSavingsGoal = useCallback((id: string) => {
       setSavingsGoals(prev => prev.filter(goal => goal.id !== id));
       showToast({ title: 'تم حذف الهدف الادخاري', variant: 'destructive' });
@@ -1690,10 +1754,16 @@ const ClientTracker: FC = () => {
                     <CardContent>
                         <Form {...savingsGoalForm}>
                             <form onSubmit={savingsGoalForm.handleSubmit(onSavingsGoalSubmit)} className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                                     <FormField control={savingsGoalForm.control} name="name" render={({ field }) => (<FormItem><FormLabel>اسم الهدف</FormLabel><FormControl><Input placeholder="مثال: شراء سيارة جديدة" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                    <FormField control={savingsGoalForm.control} name="targetAmount" render={({ field }) => (<FormItem><FormLabel>المبلغ المستهدف</FormLabel><FormControl><Input type="number" placeholder="المبلغ" {...field} step="100" /></FormControl><FormMessage /></FormItem>)} />
-                                    <FormField control={savingsGoalForm.control} name="currency" render={({ field }) => (<FormItem><FormLabel>العملة</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="اختر العملة" /></SelectTrigger></FormControl><SelectContent>{Object.entries(CURRENCIES).map(([code, name]) => (<SelectItem key={code} value={code}>{name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
+
+                                    <FormField control={savingsGoalForm.control} name="goalType" render={({ field }) => (<FormItem><FormLabel>نوع الهدف</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="اختر النوع" /></SelectTrigger></FormControl><SelectContent><SelectItem value="currency">عملة نقدية</SelectItem><SelectItem value="gold">ذهب</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
+                                    
+                                    <FormField control={savingsGoalForm.control} name="targetAmount" render={({ field }) => (<FormItem><FormLabel>{savingsGoalType === 'gold' ? 'الوزن المستهدف (بالجرام)' : 'المبلغ المستهدف'}</FormLabel><FormControl><Input type="number" placeholder={savingsGoalType === 'gold' ? 'بالجرام' : 'المبلغ'} {...field} step="0.01" /></FormControl><FormMessage /></FormItem>)} />
+                                    
+                                    {savingsGoalType === 'currency' && (
+                                        <FormField control={savingsGoalForm.control} name="currency" render={({ field }) => (<FormItem><FormLabel>العملة</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="اختر العملة" /></SelectTrigger></FormControl><SelectContent>{Object.entries(CURRENCIES).map(([code, name]) => (<SelectItem key={code} value={code}>{name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
+                                    )}
                                 </div>
                                 <Button type="submit" className="mt-6"><PlusCircle className="mr-2 h-4 w-4" /> إضافة هدف</Button>
                             </form>
@@ -1708,21 +1778,27 @@ const ClientTracker: FC = () => {
                             {savingsGoals.map(goal => {
                                 const progress = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
                                 const isAdding = addingToSavingsGoalId === goal.id;
+                                const unit = goal.goalType === 'gold' ? 'gram' : goal.currency!;
+                                const icon = goal.goalType === 'gold' ? <Gem className="h-5 w-5 text-yellow-500" /> : <PiggyBank className="h-5 w-5 text-green-500" />;
+
                                 return (
                                     <Card key={goal.id} className="flex flex-col">
                                         <CardHeader>
-                                            <CardTitle className="flex justify-between items-center">
-                                                <span>{goal.name}</span>
-                                                <Button variant="ghost" size="icon" onClick={() => deleteSavingsGoal(goal.id)} className="text-destructive h-8 w-8">
+                                            <CardTitle className="flex justify-between items-start">
+                                                <div className="flex items-center gap-2">
+                                                    {icon}
+                                                    <span>{goal.name}</span>
+                                                </div>
+                                                <Button variant="ghost" size="icon" onClick={() => deleteSavingsGoal(goal.id)} className="text-destructive h-8 w-8 shrink-0">
                                                     <Trash2 className="h-4 w-4" />
                                                 </Button>
                                             </CardTitle>
-                                            <CardDescription>{formatCurrency(goal.targetAmount, goal.currency)}</CardDescription>
+                                            <CardDescription>{formatAmount(goal.targetAmount, unit)}</CardDescription>
                                         </CardHeader>
                                         <CardContent className="flex-grow space-y-4">
                                             <div>
                                                 <div className="flex justify-between items-baseline mb-1">
-                                                    <span className="text-lg font-bold text-primary">{formatCurrency(goal.currentAmount, goal.currency)}</span>
+                                                    <span className="text-lg font-bold text-primary">{formatAmount(goal.currentAmount, unit)}</span>
                                                     <span className="text-sm text-muted-foreground">({progress.toFixed(1)}%)</span>
                                                 </div>
                                                 <Progress value={progress} className="h-3" />
@@ -1735,9 +1811,9 @@ const ClientTracker: FC = () => {
                                                             name="amount"
                                                             render={({ field }) => (
                                                                 <FormItem>
-                                                                    <FormLabel className="text-xs">المبلغ المراد إضافته</FormLabel>
+                                                                    <FormLabel className="text-xs">{goal.goalType === 'gold' ? 'الوزن المضاف (بالجرام)' : 'المبلغ المضاف'}</FormLabel>
                                                                     <FormControl>
-                                                                        <Input type="number" placeholder="أدخل المبلغ" {...field} step="1" max={goal.targetAmount - goal.currentAmount} />
+                                                                        <Input type="number" placeholder={goal.goalType === 'gold' ? 'بالجرام' : 'أدخل المبلغ'} {...field} step="0.01" max={goal.targetAmount - goal.currentAmount} />
                                                                     </FormControl>
                                                                     <FormMessage />
                                                                 </FormItem>
@@ -1751,7 +1827,7 @@ const ClientTracker: FC = () => {
                                                 </Form>
                                             ) : (
                                                 <Button onClick={() => setAddingToSavingsGoalId(goal.id)} className="w-full" disabled={goal.currentAmount >= goal.targetAmount}>
-                                                    <PlusCircle className="mr-2 h-4 w-4" /> إضافة مبلغ
+                                                    <PlusCircle className="mr-2 h-4 w-4" /> {goal.goalType === 'gold' ? 'إضافة جرامات' : 'إضافة مبلغ'}
                                                 </Button>
                                             )}
                                         </CardContent>
@@ -2044,3 +2120,4 @@ export default ClientTracker;
 
 
     
+
