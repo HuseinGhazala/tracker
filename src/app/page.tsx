@@ -260,12 +260,12 @@ const savingsGoalBaseSchema = z.object({
   name: z.string().min(1, { message: 'اسم الهدف مطلوب.' }),
   goalType: z.enum(['currency', 'gold']),
   targetAmount: z.coerce.number().positive({ message: 'المبلغ المستهدف يجب أن يكون رقمًا موجبًا.' }),
-  currentAmount: z.coerce.number().nonnegative(),
+  currentAmount: z.coerce.number().nonnegative({ message: 'المبلغ الحالي يجب أن يكون رقمًا موجبًا أو صفرًا.' }),
   currency: z.enum(Object.keys(CURRENCIES) as [Currency, ...Currency[]]).optional(),
   creationDate: z.date(),
 });
 
-const savingsGoalSchema = savingsGoalBaseSchema.refine(data => {
+const savingsGoalFormSchema = savingsGoalBaseSchema.omit({ id: true, creationDate: true }).refine(data => {
     if (data.goalType === 'currency' && !data.currency) {
         return false;
     }
@@ -273,9 +273,13 @@ const savingsGoalSchema = savingsGoalBaseSchema.refine(data => {
 }, {
     message: 'العملة مطلوبة لأهداف العملات النقدية.',
     path: ['currency'],
+}).refine(data => data.currentAmount <= data.targetAmount, {
+    message: 'المبلغ الحالي لا يمكن أن يتجاوز المبلغ المستهدف.',
+    path: ['currentAmount'],
 });
 
-const savingsGoalFormSchema = savingsGoalBaseSchema.omit({ id: true, currentAmount: true, creationDate: true }).refine(data => {
+
+const savingsGoalSchema = savingsGoalBaseSchema.refine(data => {
     if (data.goalType === 'currency' && !data.currency) {
         return false;
     }
@@ -578,7 +582,7 @@ const ClientTracker: FC = () => {
   const appointmentForm = useForm<Appointment>({ resolver: zodResolver(appointmentSchema), defaultValues: { title: '', date: new Date(), time: '09:00', status: 'scheduled' } });
   const taskForm = useForm<Task>({ resolver: zodResolver(taskSchema), defaultValues: { description: '', priority: 'medium', status: 'todo' } });
   const expenseForm = useForm<Expense>({ resolver: zodResolver(expenseSchema), defaultValues: { description: '', amount: 0, currency: 'EGP', category: 'other', expenseDate: selectedDate }});
-  const savingsGoalForm = useForm<SavingsGoalFormData>({ resolver: zodResolver(savingsGoalFormSchema), defaultValues: { name: '', goalType: 'currency', targetAmount: 1000, currency: 'EGP' } });
+  const savingsGoalForm = useForm<SavingsGoalFormData>({ resolver: zodResolver(savingsGoalFormSchema), defaultValues: { name: '', goalType: 'currency', targetAmount: 1000, currentAmount: 0, currency: 'EGP' } });
   const addSavingsForm = useForm<AddSavingsFormData>({ resolver: zodResolver(addSavingsFormSchema) });
 
 
@@ -723,12 +727,11 @@ const ClientTracker: FC = () => {
     const newGoal: SavingsGoal = {
         ...(finalValues as SavingsGoalFormData),
         id: crypto.randomUUID(),
-        currentAmount: 0,
         creationDate: new Date(),
     };
     setSavingsGoals(prev => [...prev, newGoal]);
     showToast({ title: 'تمت إضافة هدف ادخاري', description: `تم إنشاء هدف "${values.name}" بنجاح.` });
-    savingsGoalForm.reset({ name: '', goalType: 'currency', targetAmount: 1000, currency: 'EGP' });
+    savingsGoalForm.reset({ name: '', goalType: 'currency', targetAmount: 1000, currentAmount: 0, currency: 'EGP' });
   }, [showToast, savingsGoalForm]);
 
   const onAddSavingsSubmit = useCallback((goalId: string) => (values: AddSavingsFormData) => {
@@ -1754,12 +1757,14 @@ const ClientTracker: FC = () => {
                     <CardContent>
                         <Form {...savingsGoalForm}>
                             <form onSubmit={savingsGoalForm.handleSubmit(onSavingsGoalSubmit)} className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                     <FormField control={savingsGoalForm.control} name="name" render={({ field }) => (<FormItem><FormLabel>اسم الهدف</FormLabel><FormControl><Input placeholder="مثال: شراء سيارة جديدة" {...field} /></FormControl><FormMessage /></FormItem>)} />
 
                                     <FormField control={savingsGoalForm.control} name="goalType" render={({ field }) => (<FormItem><FormLabel>نوع الهدف</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="اختر النوع" /></SelectTrigger></FormControl><SelectContent><SelectItem value="currency">عملة نقدية</SelectItem><SelectItem value="gold">ذهب</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
                                     
                                     <FormField control={savingsGoalForm.control} name="targetAmount" render={({ field }) => (<FormItem><FormLabel>{savingsGoalType === 'gold' ? 'الوزن المستهدف (بالجرام)' : 'المبلغ المستهدف'}</FormLabel><FormControl><Input type="number" placeholder={savingsGoalType === 'gold' ? 'بالجرام' : 'المبلغ'} {...field} step="0.01" /></FormControl><FormMessage /></FormItem>)} />
+
+                                    <FormField control={savingsGoalForm.control} name="currentAmount" render={({ field }) => (<FormItem><FormLabel>{savingsGoalType === 'gold' ? 'الوزن الحالي (بالجرام)' : 'المبلغ الحالي'}</FormLabel><FormControl><Input type="number" placeholder={savingsGoalType === 'gold' ? 'بالجرام' : 'المبلغ'} {...field} step="0.01" /></FormControl><FormMessage /></FormItem>)} />
                                     
                                     {savingsGoalType === 'currency' && (
                                         <FormField control={savingsGoalForm.control} name="currency" render={({ field }) => (<FormItem><FormLabel>العملة</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="اختر العملة" /></SelectTrigger></FormControl><SelectContent>{Object.entries(CURRENCIES).map(([code, name]) => (<SelectItem key={code} value={code}>{name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
@@ -2120,4 +2125,5 @@ export default ClientTracker;
 
 
     
+
 
