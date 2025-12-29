@@ -22,7 +22,7 @@ export async function analyzeFinancials(input: FinancialAnalysisInput): Promise<
 
 const financialAnalysisPrompt = ai.definePrompt({
   name: 'financialAnalysisPrompt',
-  model: 'gemini-pro',
+  model: 'googleai/gemini-pro',
   input: { schema: FinancialAnalysisInputSchema },
   output: { schema: FinancialAnalysisOutputSchema },
   prompt: `أنت خبير تحليل مالي يعمل بالذكاء الاصطناعي. مهمتك هي تحليل ملخصات مالية شهرية (تشمل الدخل والمصروفات) مقدمة لشركة صغيرة أو مستقل.
@@ -77,9 +77,3 @@ const financialAnalysisFlow = ai.defineFlow(
     return output;
   }
 );
-
-
-
-
-
-
