@@ -24,7 +24,6 @@ const financialAnalysisPrompt = ai.definePrompt({
   name: 'financialAnalysisPrompt',
   input: { schema: FinancialAnalysisInputSchema },
   output: { schema: FinancialAnalysisOutputSchema },
-  model: 'gemini-1.5-flash-latest',
   prompt: `أنت خبير تحليل مالي يعمل بالذكاء الاصطناعي. مهمتك هي تحليل ملخصات مالية شهرية (تشمل الدخل والمصروفات) مقدمة لشركة صغيرة أو مستقل.
 يركز المستخدم حاليًا على الشهر: {{currentMonthFocus.year}}-{{currentMonthFocus.month}}. (الشهر مُقدم بصيغة MM المكونة من رقمين، على سبيل المثال، 01 لشهر يناير). عند الإشارة إلى الأشهر بتنسيق YYYY-MM، يرجى التأكد دائمًا من تمثيل الشهر برقمين.
 
