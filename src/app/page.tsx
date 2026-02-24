@@ -498,7 +498,7 @@ const ClientTracker: FC = () => {
     fetchRates();
   }, []);
 
-  const loadDataFromLocalStorage = <T extends { creationDate?: Date | string, expenseDate?: Date | string, targetDate?: Date | string }>(key: string, schema: z.ZodType<T>, dateFields: (keyof T)[] = []): T[] => {
+  const loadDataFromLocalStorage = <T>(key: string, schema: z.ZodType<T>, dateFields: string[] = []): T[] => {
     if (typeof window === 'undefined') return [];
     const storedData = localStorage.getItem(key);
     if (storedData) {
@@ -924,7 +924,7 @@ const ClientTracker: FC = () => {
   }, [showToast]);
 
   const updateTaskStatus = useCallback((id: string, status: TaskStatus) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : a));
+    setTasks(prev => prev.map(t => (t.id === id ? { ...t, status } : t)));
     showToast({ title: "تم تحديث حالة المهمة" });
   }, [showToast]);
 
