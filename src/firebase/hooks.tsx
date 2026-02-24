@@ -2,16 +2,24 @@
 
 import { useMemo } from 'react';
 import { useAuth, useFirestore } from './provider';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useFirestoreCollection } from '@tanstack-query-firebase/react';
-import { collection, query, where } from 'firebase/firestore';
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
+import { useCollectionQuery } from '@tanstack-query-firebase/react/firestore';
+import type { User } from 'firebase/auth';
+import {
+  collection as fsCollection,
+  query as fsQuery,
+  where as fsWhere,
+  type Query,
+  type CollectionReference,
+  type DocumentData,
+} from 'firebase/firestore';
 
 // Custom hook to get the current user's data
-export function useUser() {
+export function useUser(): UseQueryResult<User | null, Error> {
   const auth = useAuth();
   const queryClient = useQueryClient();
 
-  const userQuery = useQuery({
+  const userQuery = useQuery<User | null, Error>({
     queryKey: ['user'],
     queryFn: () => {
       return new Promise((resolve, reject) => {
@@ -24,43 +32,50 @@ export function useUser() {
         }, reject);
       });
     },
-    initialData: auth?.currentUser,
+    initialData: auth ? auth.currentUser : null,
     staleTime: Infinity, // User data is not expected to change frequently
-    onChange: (newUser) => {
-      // When the user changes, invalidate related data to trigger refetches
-      queryClient.invalidateQueries(['collections']);
-    },
   });
 
   return userQuery;
 }
 
-// Custom hook to subscribe to a Firestore collection
-export function useCollection(path: string, options: any = {}) {
+// Custom hook to read a Firestore collection (optionally with where clause)
+export function useCollection(
+  input:
+    | string
+    | Query<DocumentData, DocumentData>
+    | CollectionReference<DocumentData, DocumentData>
+    | null,
+  options: { where?: [string, any, any]; listen?: boolean; idField?: string } = {}
+) {
   const firestore = useFirestore();
   const { data: user } = useUser();
 
-  const queryKey = useMemo(() => {
-    return ['collections', path, options, user?.uid];
-  }, [path, options, user?.uid]);
-
   const collectionQuery = useMemo(() => {
     if (!firestore || !user) return null;
-    let q = query(collection(firestore, `users/${user.uid}/${path}`));
-    if (options.where) {
-      const [field, op, value] = options.where;
-      q = query(q, where(field, op, value));
+    if (typeof input !== 'string' && input) return input;
+    if (typeof input === 'string') {
+      let q = fsQuery(fsCollection(firestore, `users/${user.uid}/${input}`));
+      if (options.where) {
+        const [field, op, value] = options.where;
+        q = fsQuery(q, fsWhere(field as string, op as any, value));
+      }
+      return q;
     }
-    return q;
-  }, [firestore, user, path, options.where]);
+    return null;
+  }, [firestore, user, input, options.where]);
 
-  const { data, isLoading, isError, error } = useFirestoreCollection(
-    collectionQuery,
-    {
-      listen: options.listen !== false, // Listen for real-time updates by default
-      idField: options.idField || 'id',
-    }
-  );
+  const result = useCollectionQuery(collectionQuery as Query<DocumentData, DocumentData>, {
+    queryKey: ['collections', user?.uid ?? 'anon', typeof input === 'string' ? input : 'ref', options.where ?? null],
+    enabled: !!collectionQuery,
+  });
 
-  return { data, loading: isLoading, isError, error };
+  const data = (
+    result.data?.docs.map((doc) => ({
+      id: doc.id,
+      ...(doc.data() as Record<string, unknown>),
+    })) ?? []
+  ) as any[];
+
+  return { data, loading: result.isLoading, isError: result.isError, error: result.error };
 }

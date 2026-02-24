@@ -2,7 +2,7 @@
 "use client"
 
 import * as React from "react"
-import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts" // Changed imports
+import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts" // Changed imports
 
 import {
   ChartContainer,
@@ -94,9 +94,7 @@ export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
 
 
   return (
-    <ChartContainer config={chartConfig} className="min-h-[350px] w-full pr-5"> {/* Increased height */}
-       <ResponsiveContainer width="100%" height={350}>
-          {/* Changed to AreaChart */}
+    <ChartContainer config={chartConfig} className="min-h-[350px] w-full pr-5">
           <AreaChart
             data={data}
             margin={{ top: 20, right: 20, bottom: 60, left: 20 }} // Adjusted margins
@@ -184,7 +182,6 @@ export function ClientPaymentChart({ data }: ClientPaymentChartProps) {
                 name="cumulativeIncome" // Match the key in chartConfig
              />
           </AreaChart>
-       </ResponsiveContainer>
     </ChartContainer>
   )
 }
