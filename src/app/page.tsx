@@ -498,7 +498,7 @@ const ClientTracker: FC = () => {
     fetchRates();
   }, []);
 
-  const loadDataFromLocalStorage = <T extends { creationDate?: Date | string, expenseDate?: Date | string, targetDate?: Date | string }>(key: string, schema: z.ZodType<T>, dateFields: (keyof T)[] = []): T[] => {
+  const loadDataFromLocalStorage = <T,>(key: string, schema: z.ZodType<T>, dateFields: string[] = []): T[] => {
     if (typeof window === 'undefined') return [];
     const storedData = localStorage.getItem(key);
     if (storedData) {
@@ -528,15 +528,16 @@ const ClientTracker: FC = () => {
                 }
                 return newItem;
             });
-            return parsedData.filter((item: any) => {
+            const validated: T[] = [];
+            for (const item of parsedData) {
                 try {
-                    schema.parse(item);
-                    return true;
+                    const parsedItem = schema.parse(item) as T;
+                    validated.push(parsedItem);
                 } catch (e) {
                     console.warn(`Invalid data for key ${key} in localStorage:`, item, e);
-                    return false;
                 }
-            });
+            }
+            return validated;
         } catch (error) {
             console.error(`Failed to parse data for ${key} from localStorage:`, error);
         }
@@ -550,7 +551,7 @@ const ClientTracker: FC = () => {
     setPayments(loadDataFromLocalStorage(PAYMENT_STORAGE_KEY, paymentSchema, ['paymentDate']));
     setDebts(loadDataFromLocalStorage(DEBT_STORAGE_KEY, debtSchema, ['dueDate', 'paidDate', 'creationDate']));
     setAppointments(loadDataFromLocalStorage(APPOINTMENT_STORAGE_KEY, appointmentSchema, ['date', 'creationDate']));
-    setTasks(loadDataFromLocalStorage(TASK_STORAGE_KEY, taskSchema, ['dueDate', 'creationDate']));
+    setTasks(loadDataFromLocalStorage(TASK_STORAGE_KEY, taskSchema, ['dueDate', 'creationDate']) as Task[]);
     setExpenses(loadDataFromLocalStorage(EXPENSE_STORAGE_KEY, expenseSchema, ['expenseDate', 'creationDate']));
     setSavingsGoals(loadDataFromLocalStorage(SAVINGS_GOAL_STORAGE_KEY, savingsGoalSchema, ['creationDate']));
 
@@ -677,7 +678,7 @@ const ClientTracker: FC = () => {
         }
          let newStatus: DebtStatus = 'partially_paid';
          if (values.amountRepaid <= 0) {
-             newStatus = 'outstanding'; values.amountRepaid = 0; values.paidDate = undefined;
+            newStatus = 'outstanding'; values.amountRepaid = 0; values.paidDate = new Date();
          } else if (values.amountRepaid >= originalDebt.amount) {
              newStatus = 'paid'; values.amountRepaid = originalDebt.amount;
          }
@@ -924,7 +925,7 @@ const ClientTracker: FC = () => {
   }, [showToast]);
 
   const updateTaskStatus = useCallback((id: string, status: TaskStatus) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : a));
+    setTasks(prev => prev.map(t => (t.id === id ? { ...t, status } : t)));
     showToast({ title: "تم تحديث حالة المهمة" });
   }, [showToast]);
 
@@ -1580,9 +1581,9 @@ const ClientTracker: FC = () => {
                                   <TableCell className="text-red-600 dark:text-red-400">{formatCurrency(remainingAmount, client.currency)}</TableCell>
                                   <TableCell className="text-blue-600 dark:text-blue-400">{rateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : remainingAmountUSD !== null ? formatCurrency(remainingAmountUSD, 'USD') : rateError ? <span className="text-destructive text-xs">خطأ</span> : '-'}</TableCell>
                                  <TableCell className="text-muted-foreground">{formatDateAr(latestPaymentDate)}</TableCell>
-                                 <TableCell className="text-left space-x-1 rtl:space-x-reverse">
-                                    {(paymentStatus !== 'paid' || isAddingPayment || paymentStatus === 'partially_paid') && (
-                                      <Button variant="outline" size="sm" onClick={() => { const newClientId = client.id === addingPaymentForClientId ? null : client.id; setAddingPaymentForClientId(newClientId); if (newClientId) paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() }); }} className={cn("text-xs", isAddingPayment && "bg-muted")}>
+                                <TableCell className="text-left space-x-1 rtl:space-x-reverse">
+                                   {(paymentStatus !== 'paid' || isAddingPayment) && (
+                                      <Button variant="outline" size="sm" onClick={() => { const baseId = client.id ?? null; const newClientId = baseId !== null && baseId === addingPaymentForClientId ? null : baseId; setAddingPaymentForClientId(newClientId); if (newClientId) paymentForm.reset({ paymentAmount: 0, paymentDate: new Date() }); }} className={cn("text-xs", isAddingPayment && "bg-muted")}>
                                         {isAddingPayment ? 'إلغاء' : (amountPaid > 0 ? 'تعديل/إضافة دفعة' : 'إضافة دفعة')}
                                         {!isAddingPayment && <Edit className="h-3 w-3 ml-1 rtl:mr-1 rtl:ml-0" />}
                                       </Button>
@@ -1708,8 +1709,8 @@ const ClientTracker: FC = () => {
                                                 <TableCell className="text-muted-foreground">{formatDateAr(debt.paidDate)}</TableCell>
                                                 <TableCell className="max-w-[150px] truncate text-muted-foreground" title={debt.notes || ''}>{debt.notes || '-'}</TableCell>
                                                 <TableCell className="text-left space-x-1 rtl:space-x-reverse">
-                                                     {(debt.status !== 'paid' || isEditingRepayment || debt.status === 'partially_paid') && (
-                                                      <Button variant="outline" size="sm" onClick={() => { const newDebtId = debt.id === editingRepaymentForDebtId ? null : debt.id; setEditingRepaymentForDebtId(newDebtId); if (newDebtId) repaymentForm.reset({ amountRepaid: debt.amountRepaid ?? 0, paidDate: debt.paidDate || new Date() }); }} className={cn("text-xs", isEditingRepayment && "bg-muted")}>
+                                                     {(debt.status !== 'paid' || isEditingRepayment) && (
+                                                      <Button variant="outline" size="sm" onClick={() => { const baseId = debt.id ?? null; const newDebtId = baseId !== null && baseId === editingRepaymentForDebtId ? null : baseId; setEditingRepaymentForDebtId(newDebtId); if (newDebtId) repaymentForm.reset({ amountRepaid: debt.amountRepaid ?? 0, paidDate: debt.paidDate || new Date() }); }} className={cn("text-xs", isEditingRepayment && "bg-muted")}>
                                                           {isEditingRepayment ? 'إلغاء' : 'تعديل السداد'} {!isEditingRepayment && <Edit className="h-3 w-3 ml-1 rtl:mr-1 rtl:ml-0" />}
                                                       </Button>
                                                       )}

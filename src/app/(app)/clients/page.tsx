@@ -4,17 +4,9 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  collection,
-  doc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-  serverTimestamp,
-} from 'firebase/firestore';
-import { useFirestore, useUser, useCollection } from '@/firebase';
+import { useUser } from '@/firebase';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { createClient, deleteClient, listClients, createPayment, deletePayment, listPayments } from '@/services/supabase-data';
 import {
   Button,
   Card,
@@ -79,33 +71,22 @@ const paymentSchema = z.object({
 type PaymentFormData = z.infer<typeof paymentSchema>;
 
 const ClientsPage = () => {
-  const firestore = useFirestore();
   const { data: user } = useUser();
   const { toast } = useToast();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [addingPaymentFor, setAddingPaymentFor] = useState<string | null>(null);
 
-  const clientsQuery = useMemo(() => {
-    if (!user || !firestore) return null;
-    return collection(firestore, `users/${user.uid}/clients`);
-  }, [firestore, user]);
-
-  const { data: clients, loading: clientsLoading } = useCollection(clientsQuery, {
-      listen: true,
-      // @ts-ignore
-      idField: 'id',
+  const queryClient = useQueryClient();
+  const { data: clients = [], isLoading: clientsLoading } = useQuery({
+    queryKey: ['clients', user?.uid],
+    queryFn: () => listClients(user!.uid),
+    enabled: !!user?.uid,
   });
-
-  const paymentsQuery = useMemo(() => {
-    if (!user || !firestore) return null;
-    return collection(firestore, `users/${user.uid}/payments`);
-  }, [firestore, user]);
-  
-  const { data: payments, loading: paymentsLoading } = useCollection(paymentsQuery, { 
-      listen: true, 
-      // @ts-ignore
-      idField: 'id' 
+  const { data: payments = [], isLoading: paymentsLoading } = useQuery({
+    queryKey: ['payments', user?.uid],
+    queryFn: () => listPayments(user!.uid),
+    enabled: !!user?.uid,
   });
 
   const clientForm = useForm<ClientFormData>({
@@ -128,14 +109,11 @@ const ClientsPage = () => {
   });
 
   const onClientSubmit = async (data: ClientFormData) => {
-    if (!firestore || !user) return;
+    if (!user) return;
     setIsSubmitting(true);
     try {
-      await addDoc(collection(firestore, `users/${user.uid}/clients`), {
-        ...data,
-        createdAt: serverTimestamp(),
-        totalPaid: 0,
-      });
+      await createClient({ uid: user.uid, ...data });
+      await queryClient.invalidateQueries({ queryKey: ['clients', user.uid] });
       toast({ title: 'تمت إضافة العميل بنجاح!' });
       clientForm.reset();
     } catch (error: any) {
@@ -146,7 +124,7 @@ const ClientsPage = () => {
   };
 
   const onPaymentSubmit = async (clientId: string) => {
-    if (!firestore || !user) return;
+    if (!user) return;
     setIsSubmitting(true);
 
     const values = paymentForm.getValues();
@@ -159,19 +137,18 @@ const ClientsPage = () => {
     }
 
     try {
-        await addDoc(collection(firestore, `users/${user.uid}/payments`), {
-            clientId,
-            ...values,
-            currency: client.currency,
-            createdAt: serverTimestamp(),
+        await createPayment({
+          uid: user.uid,
+          clientId,
+          amount: values.amount,
+          paymentDate: values.paymentDate.toISOString().slice(0, 10),
+          currency: client.currency,
+          notes: values.notes,
         });
-        
-        // This should be a transaction in a real app
-        const newTotalPaid = (client.totalPaid || 0) + values.amount;
-        await updateDoc(doc(firestore, `users/${user.uid}/clients`, clientId), {
-            totalPaid: newTotalPaid
-        });
-
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['payments', user.uid] }),
+          queryClient.invalidateQueries({ queryKey: ['clients', user.uid] }),
+        ]);
         toast({ title: 'تمت إضافة الدفعة بنجاح!' });
         paymentForm.reset();
         setAddingPaymentFor(null);
@@ -184,16 +161,16 @@ const ClientsPage = () => {
   };
 
   const handleDeleteClient = async (clientId: string) => {
-    if (!firestore || !user) return;
+    if (!user) return;
      if (!confirm('هل أنت متأكد من حذف هذا العميل وجميع دفعاته؟')) return;
 
     try {
-        // This should be a batched write in a real app
-        const clientPayments = payments?.filter(p => p.clientId === clientId) || [];
-        for (const payment of clientPayments) {
-            await deleteDoc(doc(firestore, `users/${user.uid}/payments`, payment.id));
-        }
-        await deleteDoc(doc(firestore, `users/${user.uid}/clients`, clientId));
+        // Delete client (payments cascade on DB)
+        await deleteClient(user.uid, clientId);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['payments', user.uid] }),
+          queryClient.invalidateQueries({ queryKey: ['clients', user.uid] }),
+        ]);
         toast({ title: 'تم حذف العميل بنجاح', variant: 'destructive' });
     } catch (error: any) {
         toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
@@ -203,13 +180,22 @@ const ClientsPage = () => {
   const clientsWithPayments = useMemo(() => {
       if (!clients || !payments) return [];
       return clients.map(client => {
-          const clientPayments = payments.filter(p => p.clientId === client.id);
-          const totalPaid = clientPayments.reduce((acc, p) => acc + p.amount, 0);
+          const clientPayments = payments.filter((p: any) => p.client_id === client.id);
+          const totalPaid = clientPayments.reduce((acc: number, p: any) => acc + Number(p.amount), 0);
           return {
               ...client,
-              payments: clientPayments,
+              payments: clientPayments.map((p: any) => ({
+                id: p.id,
+                clientId: p.client_id,
+                amount: Number(p.amount),
+                currency: p.currency,
+                paymentDate: new Date(p.payment_date),
+                notes: p.notes || '',
+              })),
               totalPaid,
-              remaining: client.totalProjectCost - totalPaid,
+              totalProjectCost: Number(client.total_project_cost ?? client.totalProjectCost ?? 0),
+              currency: client.currency,
+              remaining: Number(client.total_project_cost ?? 0) - totalPaid,
           }
       })
   }, [clients, payments]);
