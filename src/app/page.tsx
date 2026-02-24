@@ -64,6 +64,10 @@ import { MonthNavigation } from '@/components/month-navigation';
 import { Progress } from '@/components/ui/progress';
 
 
+import { useUser } from '@/firebase';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { listClients, listPayments, createClient, createPayment, deleteClient as deleteClientApi, deletePayment as deletePaymentApi } from '@/services/supabase-data';
+
 import { sendDailyReport } from '@/ai/flows/send-daily-report-flow';
 import type { DailyReportInput } from '@/ai/flows/schemas/daily-report-schemas';
 
@@ -416,6 +420,18 @@ const UsdToEgpRateDisplay: FC<{ rates: ExchangeRates | null }> = ({ rates }) => 
 
 
 const ClientTracker: FC = () => {
+  const { data: user } = useUser();
+  const { data: supabaseClients } = useQuery({
+    queryKey: ['clients', user?.uid],
+    queryFn: () => listClients(user!.uid),
+    enabled: !!user?.uid,
+  });
+  const { data: supabasePayments } = useQuery({
+    queryKey: ['payments', user?.uid],
+    queryFn: () => listPayments(user!.uid),
+    enabled: !!user?.uid,
+  });
+
   const [clients, setClients] = useState<Client[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
@@ -545,17 +561,15 @@ const ClientTracker: FC = () => {
     return [];
   };
 
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     setIsMounted(true);
-    setClients(loadDataFromLocalStorage(CLIENT_STORAGE_KEY, clientSchema, ['creationDate']));
-    setPayments(loadDataFromLocalStorage(PAYMENT_STORAGE_KEY, paymentSchema, ['paymentDate']));
     setDebts(loadDataFromLocalStorage(DEBT_STORAGE_KEY, debtSchema, ['dueDate', 'paidDate', 'creationDate']));
     setAppointments(loadDataFromLocalStorage(APPOINTMENT_STORAGE_KEY, appointmentSchema, ['date', 'creationDate']));
     setTasks(loadDataFromLocalStorage(TASK_STORAGE_KEY, taskSchema, ['dueDate', 'creationDate']) as Task[]);
     setExpenses(loadDataFromLocalStorage(EXPENSE_STORAGE_KEY, expenseSchema, ['expenseDate', 'creationDate']));
     setSavingsGoals(loadDataFromLocalStorage(SAVINGS_GOAL_STORAGE_KEY, savingsGoalSchema, ['creationDate']));
-
-
     const storedDate = localStorage.getItem(SELECTED_DATE_STORAGE_KEY);
     if (storedDate) {
         const parsedDate = new Date(storedDate);
@@ -565,8 +579,38 @@ const ClientTracker: FC = () => {
     }
   }, []);
 
-  useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(CLIENT_STORAGE_KEY, JSON.stringify(clients)); }, [clients, isMounted]);
-  useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(PAYMENT_STORAGE_KEY, JSON.stringify(payments)); }, [payments, isMounted]);
+  // عند عدم تسجيل الدخول: تحميل العملاء والدفعات من localStorage فقط
+  useEffect(() => {
+    if (!isMounted || typeof window === 'undefined' || user?.uid) return;
+    setClients(loadDataFromLocalStorage(CLIENT_STORAGE_KEY, clientSchema, ['creationDate']));
+    setPayments(loadDataFromLocalStorage(PAYMENT_STORAGE_KEY, paymentSchema, ['paymentDate']));
+  }, [isMounted, user?.uid]);
+
+  // عند تسجيل الدخول: المصدر الوحيد للعملاء والدفعات هو Supabase
+  useEffect(() => {
+    if (!user?.uid || supabaseClients === undefined || supabasePayments === undefined) return;
+    const mappedClients: Client[] = (supabaseClients || []).map((c: Record<string, unknown>) => ({
+      id: c.id as string,
+      name: (c.name as string) || '',
+      project: (c.project as string) || '',
+      totalProjectCost: Number(c.total_project_cost ?? 0),
+      currency: (c.currency as Currency) || 'EGP',
+      creationDate: c.created_at ? new Date(c.created_at as string) : new Date(),
+    }));
+    const mappedPayments: Payment[] = (supabasePayments || []).map((p: Record<string, unknown>) => ({
+      id: p.id as string,
+      clientId: p.client_id as string,
+      amount: Number(p.amount ?? 0),
+      paymentDate: new Date((p.payment_date as string) || Date.now()),
+      currency: (p.currency as Currency) || 'EGP',
+    }));
+    setClients(mappedClients);
+    setPayments(mappedPayments);
+  }, [user?.uid, supabaseClients, supabasePayments]);
+
+  // عدم حفظ العملاء والدفعات في localStorage عند تسجيل الدخول (Supabase هو المصدر)
+  useEffect(() => { if (isMounted && typeof window !== 'undefined' && !user?.uid) localStorage.setItem(CLIENT_STORAGE_KEY, JSON.stringify(clients)); }, [clients, isMounted, user?.uid]);
+  useEffect(() => { if (isMounted && typeof window !== 'undefined' && !user?.uid) localStorage.setItem(PAYMENT_STORAGE_KEY, JSON.stringify(payments)); }, [payments, isMounted, user?.uid]);
   useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(DEBT_STORAGE_KEY, JSON.stringify(debts)); }, [debts, isMounted]);
   useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(APPOINTMENT_STORAGE_KEY, JSON.stringify(appointments)); }, [appointments, isMounted]);
   useEffect(() => { if (isMounted && typeof window !== 'undefined') localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(tasks)); }, [tasks, isMounted]);
@@ -626,14 +670,32 @@ const ClientTracker: FC = () => {
     expenseForm.setValue('expenseDate', selectedDate);
   }, [selectedDate, expenseForm]);
 
-  const onClientSubmit = useCallback((values: Client) => {
-      const newClient = { ...values, id: crypto.randomUUID(), creationDate: selectedDate };
-      setClients((prev) => [...prev, newClient]);
-      showToast({ title: 'تمت إضافة العميل', description: `${values.name} تمت إضافته بنجاح.` });
+  const onClientSubmit = useCallback(async (values: Client) => {
+      if (user?.uid) {
+        try {
+          await createClient({
+            uid: user.uid,
+            name: values.name,
+            project: values.project,
+            totalProjectCost: values.totalProjectCost,
+            currency: values.currency,
+          });
+          await queryClient.invalidateQueries({ queryKey: ['clients', user.uid] });
+          showToast({ title: 'تمت إضافة العميل', description: `${values.name} تمت إضافته بنجاح (محفوظ في السحابة).` });
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : 'فشل الحفظ';
+          showToast({ title: 'خطأ في الحفظ', description: msg, variant: 'destructive' });
+          return;
+        }
+      } else {
+        const newClient = { ...values, id: crypto.randomUUID(), creationDate: selectedDate };
+        setClients((prev) => [...prev, newClient]);
+        showToast({ title: 'تمت إضافة العميل', description: `${values.name} تمت إضافته بنجاح.` });
+      }
       clientForm.reset();
-  }, [showToast, clientForm, selectedDate]);
+  }, [user?.uid, queryClient, showToast, clientForm, selectedDate]);
 
-  const onPaymentSubmit = useCallback((clientId: string, clientCurrency: Currency) => (values: PaymentFormData) => {
+  const onPaymentSubmit = useCallback((clientId: string, clientCurrency: Currency) => async (values: PaymentFormData) => {
         const client = clients.find(c => c.id === clientId);
         if (!client) return;
         const totalPaid = calculateTotalPaid(clientId, payments, selectedDate);
@@ -642,12 +704,31 @@ const ClientTracker: FC = () => {
              paymentForm.setError('paymentAmount', { type: 'manual', message: `مبلغ الدفعة يتجاوز المبلغ المتبقي (${formatCurrency(remaining, clientCurrency)}).` });
              return;
         }
-        const newPayment: Payment = { id: crypto.randomUUID(), clientId, amount: values.paymentAmount, paymentDate: values.paymentDate, currency: clientCurrency };
-        setPayments((prev) => [...prev, newPayment]);
-        showToast({ title: 'تمت إضافة دفعة', description: `تم تسجيل دفعة لـ ${client.name}.` });
+        if (user?.uid) {
+          try {
+            await createPayment({
+              uid: user.uid,
+              clientId,
+              amount: values.paymentAmount,
+              paymentDate: values.paymentDate.toISOString().split('T')[0],
+              currency: clientCurrency,
+            });
+            await queryClient.invalidateQueries({ queryKey: ['payments', user.uid] });
+            await queryClient.invalidateQueries({ queryKey: ['clients', user.uid] });
+            showToast({ title: 'تمت إضافة دفعة', description: `تم تسجيل دفعة لـ ${client.name} (محفوظة في السحابة).` });
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : 'فشل الحفظ';
+            showToast({ title: 'خطأ في الحفظ', description: msg, variant: 'destructive' });
+            return;
+          }
+        } else {
+          const newPayment: Payment = { id: crypto.randomUUID(), clientId, amount: values.paymentAmount, paymentDate: values.paymentDate, currency: clientCurrency };
+          setPayments((prev) => [...prev, newPayment]);
+          showToast({ title: 'تمت إضافة دفعة', description: `تم تسجيل دفعة لـ ${client.name}.` });
+        }
         paymentForm.reset();
         setAddingPaymentForClientId(null);
-    }, [clients, payments, showToast, paymentForm, selectedDate]);
+    }, [clients, payments, user?.uid, queryClient, showToast, paymentForm, selectedDate]);
 
   const onDebtSubmit = useCallback((values: Debt) => {
        let finalValues = { ...values, creationDate: selectedDate };
@@ -763,17 +844,43 @@ const ClientTracker: FC = () => {
   }, [addSavingsForm, showToast, savingsGoals]);
 
 
-  const deleteClient = useCallback((id: string) => {
-    setClients(prev => prev.filter(c => c.id !== id));
-    setPayments(prev => prev.filter(p => p.clientId !== id));
-    showToast({ title: 'تم حذف العميل', variant: 'destructive' });
+  const deleteClient = useCallback(async (id: string) => {
+    if (user?.uid) {
+      try {
+        await deleteClientApi(user.uid, id);
+        await queryClient.invalidateQueries({ queryKey: ['clients', user.uid] });
+        await queryClient.invalidateQueries({ queryKey: ['payments', user.uid] });
+        showToast({ title: 'تم حذف العميل', variant: 'destructive' });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'فشل الحذف';
+        showToast({ title: 'خطأ في الحذف', description: msg, variant: 'destructive' });
+        return;
+      }
+    } else {
+      setClients(prev => prev.filter(c => c.id !== id));
+      setPayments(prev => prev.filter(p => p.clientId !== id));
+      showToast({ title: 'تم حذف العميل', variant: 'destructive' });
+    }
     if (addingPaymentForClientId === id) setAddingPaymentForClientId(null);
-  }, [showToast, addingPaymentForClientId]);
+  }, [user?.uid, queryClient, showToast, addingPaymentForClientId]);
 
-  const deletePayment = useCallback((id: string) => {
-    setPayments(prev => prev.filter(p => p.id !== id));
-    showToast({ title: 'تم حذف الدفعة', variant: 'destructive' });
-  }, [showToast]);
+  const deletePayment = useCallback(async (id: string) => {
+    if (user?.uid) {
+      try {
+        await deletePaymentApi(id);
+        await queryClient.invalidateQueries({ queryKey: ['payments', user.uid] });
+        await queryClient.invalidateQueries({ queryKey: ['clients', user.uid] });
+        showToast({ title: 'تم حذف الدفعة', variant: 'destructive' });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'فشل الحذف';
+        showToast({ title: 'خطأ في الحذف', description: msg, variant: 'destructive' });
+        return;
+      }
+    } else {
+      setPayments(prev => prev.filter(p => p.id !== id));
+      showToast({ title: 'تم حذف الدفعة', variant: 'destructive' });
+    }
+  }, [user?.uid, queryClient, showToast]);
 
   const deleteDebt = useCallback((id: string) => {
     setDebts(prev => prev.filter(d => d.id !== id));

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "import-backup": "tsx scripts/import-backup-to-supabase.ts",
+    "prepare-clients-csv": "tsx scripts/prepare-clients-csv.ts",
+    "prepare-payments-csv": "tsx scripts/prepare-payments-csv.ts",
     "dev": "next dev --turbopack -p 9002",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
     "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
@@ -44,7 +47,7 @@
     "embla-carousel-autoplay": "^8.2.0",
     "embla-carousel-react": "^8.2.0",
     "exceljs": "^4.4.0",
-    "firebase": "^11.3.0",
+    "firebase": "^11.10.0",
     "genkit": "^1.6.2",
     "lucide-react": "^0.475.0",
     "next": "15.2.8",

@@ -1,10 +1,17 @@
 -- Supabase schema for tracker app
 -- Run in Supabase SQL editor before using the app
+--
+-- استيراد العملاء من CSV (مثلاً clients_export_*.csv):
+-- 1) شغّل هذا الملف كاملاً في SQL Editor مرة واحدة.
+-- 2) أضف المستخدم أولاً: INSERT INTO users (id) VALUES ('معرف_فيربيس_الخاص_بك') ON CONFLICT (id) DO NOTHING;
+-- 3) في الملف CSV استبدل <REPLACE_WITH_YOUR_SUPABASE_USER_ID> بمعرف المستخدم نفسه.
+-- 4) Table Editor → جدول clients → Import data from CSV واختر الملف.
 
 create table if not exists users (
   id text primary key
 );
 
+-- جاهز لاستيراد CSV: الأعمدة id, user_id, name, project, total_project_cost, currency, total_paid, created_at
 create table if not exists clients (
   id uuid primary key default gen_random_uuid(),
   user_id text not null references users(id) on delete cascade,
@@ -38,6 +45,73 @@ begin
   where id = p_client_id;
 end;
 $$;
+
+-- الديون
+create table if not exists debts (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references users(id) on delete cascade,
+  description text not null,
+  debtor_name text not null,
+  creditor_name text not null,
+  amount numeric not null,
+  currency text not null,
+  due_date date not null,
+  status text not null,
+  amount_repaid numeric not null default 0,
+  paid_date timestamp with time zone,
+  notes text,
+  created_at timestamp with time zone not null default now()
+);
+
+-- المصروفات
+create table if not exists expenses (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references users(id) on delete cascade,
+  description text not null,
+  amount numeric not null,
+  currency text not null,
+  category text not null,
+  expense_date date not null,
+  created_at timestamp with time zone not null default now()
+);
+
+-- المواعيد
+create table if not exists appointments (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references users(id) on delete cascade,
+  title text not null,
+  date date not null,
+  time text not null,
+  attendees text,
+  location text,
+  notes text,
+  status text not null,
+  created_at timestamp with time zone not null default now()
+);
+
+-- المهام
+create table if not exists tasks (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references users(id) on delete cascade,
+  description text not null,
+  due_date date,
+  priority text not null default 'medium',
+  status text not null,
+  notes text,
+  created_at timestamp with time zone not null default now()
+);
+
+-- أهداف التوفير
+create table if not exists savings_goals (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references users(id) on delete cascade,
+  name text not null,
+  goal_type text not null,
+  target_amount numeric not null,
+  current_amount numeric not null default 0,
+  currency text,
+  created_at timestamp with time zone not null default now()
+);
 
 -- Optional RLS (enable if using supabase auth instead of server key)
 -- alter table users enable row level security;

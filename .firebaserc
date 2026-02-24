@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "studio-bgyvk"
+  },
+  "targets": {
+    "studio-bgyvk": {
+      "hosting": {
+        "studio-bgyvk-b2593": [
+          "studio-bgyvk-b2593"
+        ]
+      }
+    }
+  }
+}

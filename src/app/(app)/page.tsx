@@ -1,59 +1,53 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { BarChart, Coins, Users, Wallet } from 'lucide-react';
-import { useCollection } from '@/firebase';
-import { useMemo } from 'react';
-import { collection, query, where } from 'firebase/firestore';
-import { useFirestore, useUser } from '@/firebase';
+import { useUser } from '@/firebase';
+import { useQuery } from '@tanstack/react-query';
+import { listClients, listPayments } from '@/services/supabase-data';
 
 const DashboardPage = () => {
-    const firestore = useFirestore();
     const { data: user } = useUser();
-
-    const clientsQuery = useMemo(() => {
-        if (!user || !firestore) return null;
-        return query(collection(firestore, `users/${user.uid}/clients`));
-    }, [firestore, user]);
-    const { data: clients, loading: clientsLoading } = useCollection(clientsQuery);
-
-    const debtsQuery = useMemo(() => {
-        if (!user || !firestore) return null;
-        return query(collection(firestore, `users/${user.uid}/debts`));
-    }, [firestore, user]);
-    const { data: debts, loading: debtsLoading } = useCollection(debtsQuery);
-    
-    const expensesQuery = useMemo(() => {
-        if (!user || !firestore) return null;
-        return query(collection(firestore, `users/${user.uid}/expenses`));
-    }, [firestore, user]);
-    const { data: expenses, loading: expensesLoading } = useCollection(expensesQuery);
-
+    const { data: clients = [], isLoading: clientsLoading } = useQuery({
+        queryKey: ['clients', user?.uid],
+        queryFn: () => listClients(user!.uid),
+        enabled: !!user?.uid,
+    });
+    const { data: payments = [], isLoading: paymentsLoading } = useQuery({
+        queryKey: ['payments', user?.uid],
+        queryFn: () => listPayments(user!.uid),
+        enabled: !!user?.uid,
+    });
 
     const stats = useMemo(() => {
         const totalClients = clients?.length ?? 0;
-        const totalDebts = debts?.reduce((sum, debt) => sum + (debt.status !== 'paid' ? (debt.amount - (debt.amountRepaid || 0)) : 0), 0) ?? 0;
-        const totalExpenses = expenses?.reduce((sum, expense) => sum + expense.amount, 0) ?? 0;
-        // This is a simplified calculation. A real app would need exchange rates.
-        const totalIncome = clients?.reduce((sum, client) => sum + (client.totalPaid || 0), 0) ?? 0;
-
+        const totalIncome = Array.isArray(clients)
+            ? (clients as Array<{ total_paid?: number }>).reduce((sum, c) => sum + (Number(c.total_paid) || 0), 0)
+            : 0;
         return {
             totalClients,
-            totalDebts,
-            totalExpenses,
+            totalDebts: 0,
+            totalExpenses: 0,
             totalIncome,
         };
-    }, [clients, debts, expenses]);
+    }, [clients, payments]);
 
-    const isLoading = clientsLoading || debtsLoading || expensesLoading;
+    const isLoading = clientsLoading || paymentsLoading;
 
     const formatCurrency = (amount: number, currency = 'USD') => {
         return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
     }
 
+    if (!user) {
+        return (
+            <div className="flex items-center justify-center min-h-[200px] text-muted-foreground">
+                سجّل الدخول لعرض لوحة التحكم والبيانات.
+            </div>
+        );
+    }
     if (isLoading) {
-        return <div>Loading dashboard...</div>;
+        return <div className="flex items-center justify-center min-h-[200px]">جاري تحميل البيانات...</div>;
     }
 
     return (

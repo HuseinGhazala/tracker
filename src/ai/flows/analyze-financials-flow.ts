@@ -8,6 +8,7 @@
  * - FinancialAnalysisOutput - The return type for the analyzeFinancials function.
  */
 
+import { gemini } from '@genkit-ai/googleai';
 import { ai } from '@/ai/ai-instance';
 import type { FinancialAnalysisInput, FinancialAnalysisOutput } from './schemas/financial-analysis-schemas';
 import { FinancialAnalysisInputSchema, FinancialAnalysisOutputSchema } from './schemas/financial-analysis-schemas';
@@ -22,6 +23,8 @@ export async function analyzeFinancials(input: FinancialAnalysisInput): Promise<
 
 const financialAnalysisPrompt = ai.definePrompt({
   name: 'financialAnalysisPrompt',
+  // Use 2.5 Flash if 2.0 returns NOT_FOUND in your project/region
+  model: gemini('gemini-2.5-flash'),
   input: { schema: FinancialAnalysisInputSchema },
   output: { schema: FinancialAnalysisOutputSchema },
   prompt: `أنت خبير تحليل مالي يعمل بالذكاء الاصطناعي. مهمتك هي تحليل ملخصات مالية شهرية (تشمل الدخل والمصروفات) مقدمة لشركة صغيرة أو مستقل.

@@ -1,10 +1,20 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+
+function toErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === 'object' && 'message' in e && typeof (e as { message: unknown }).message === 'string')
+    return (e as { message: string }).message;
+  return String(e ?? 'Unexpected error');
+}
+
 export async function GET(req: Request) {
-  const uid = req.headers.get('x-user-id') || (await req.json().catch(() => null))?.uid;
-  if (!uid) return NextResponse.json({ error: 'Missing user id' }, { status: 400 });
   try {
+    const uid = req.headers.get('x-user-id');
+    if (!uid) return NextResponse.json({ error: 'Missing user id' }, { status: 400 });
+
     const supabase = getSupabaseAdminClient();
     const { data, error } = await supabase
       .from('payments')
@@ -12,9 +22,14 @@ export async function GET(req: Request) {
       .eq('user_id', uid)
       .order('payment_date', { ascending: false });
     if (error) throw error;
-    return NextResponse.json({ data });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || 'Unexpected error' }, { status: 500 });
+    return NextResponse.json({ data: data ?? [] });
+  } catch (e: unknown) {
+    const message = toErrorMessage(e);
+    console.error('[GET /api/payments]', message, e);
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 }
 
