@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { useAuth, useFirestore } from './provider';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useCollectionQuery } from '@tanstack-query-firebase/react/firestore';
 import type { User } from 'firebase/auth';
 import {
@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore';
 
 // Custom hook to get the current user's data
-export function useUser() {
+export function useUser(): UseQueryResult<User | null, Error> {
   const auth = useAuth();
   const queryClient = useQueryClient();
 
@@ -32,12 +32,8 @@ export function useUser() {
         }, reject);
       });
     },
-    initialData: auth?.currentUser,
+    initialData: auth ? auth.currentUser : null,
     staleTime: Infinity, // User data is not expected to change frequently
-    onSuccess: () => {
-      // When the user changes, invalidate related data to trigger refetches
-      queryClient.invalidateQueries({ queryKey: ['collections'] });
-    },
   });
 
   return userQuery;
@@ -70,14 +66,16 @@ export function useCollection(
   }, [firestore, user, input, options.where]);
 
   const result = useCollectionQuery(collectionQuery as Query<DocumentData, DocumentData>, {
+    queryKey: ['collections', user?.uid ?? 'anon', typeof input === 'string' ? input : 'ref', options.where ?? null],
     enabled: !!collectionQuery,
   });
 
-  const data =
+  const data = (
     result.data?.docs.map((doc) => ({
       id: doc.id,
       ...(doc.data() as Record<string, unknown>),
-    })) ?? [];
+    })) ?? []
+  ) as any[];
 
   return { data, loading: result.isLoading, isError: result.isError, error: result.error };
 }
